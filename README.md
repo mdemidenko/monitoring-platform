@@ -1,6 +1,6 @@
 # Monitoring platform
 
-[![Go Version](https://img.shields.io/badge/Go-1.25.1+-blue.svg)](https://golang.org)
+[![Go Version](https://img.shields.io/badge/Go-1.25.3+-blue.svg)](https://golang.org)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 
 
@@ -32,7 +32,7 @@ curl http://localhost:8081/health
 
 Проект построен на основе микросервисной архитектуры с использованием:
 
-- **Go 1.25.1+** с чистой архитектурой
+- **Go 1.25.3+** с чистой архитектурой
 - **PostgreSQL**  для хранения данных
 - **Docker** для контейнеризации
 
