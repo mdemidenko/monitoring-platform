@@ -1,4 +1,4 @@
-# Check collaboration 
+# Monitoring platform
 
 [![Go Version](https://img.shields.io/badge/Go-1.25.1+-blue.svg)](https://golang.org)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
