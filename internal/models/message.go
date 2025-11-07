@@ -6,13 +6,6 @@ type Notification struct {
 	Text   string `json:"text"`
 }
 
-// NotificationResponse модель ответа от Telegram API
-// type NotificationResponse struct {
-// 	OK     bool   `json:"ok"`
-// 	Error  string `json:"description,omitempty"`
-// 	Result *SentNotification `json:"result,omitempty"`
-// }
-
 // SentNotification модель отправленного уведомления
 type SentNotification struct {
 	MessageID int64 `json:"message_id"`
