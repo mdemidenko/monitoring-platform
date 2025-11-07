@@ -7,11 +7,11 @@ type Notification struct {
 }
 
 // NotificationResponse модель ответа от Telegram API
-type NotificationResponse struct {
-	OK     bool   `json:"ok"`
-	Error  string `json:"description,omitempty"`
-	Result *SentNotification `json:"result,omitempty"`
-}
+// type NotificationResponse struct {
+// 	OK     bool   `json:"ok"`
+// 	Error  string `json:"description,omitempty"`
+// 	Result *SentNotification `json:"result,omitempty"`
+// }
 
 // SentNotification модель отправленного уведомления
 type SentNotification struct {

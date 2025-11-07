@@ -19,6 +19,12 @@ type TelegramService struct {
 	client *http.Client
 }
 
+type NotificationResponse struct {
+	OK     bool   `json:"ok"`
+	Error  string `json:"description,omitempty"`
+	Result *models.SentNotification `json:"result,omitempty"`
+}
+
 func NewTelegramService(cfg *config.Config) *TelegramService {
 	timeout := time.Duration(cfg.Telegram.Timeout) * time.Second
 	
@@ -67,7 +73,7 @@ func (s *TelegramService) SendNotification(text string) (*models.SentNotificatio
 		log.Printf("Response: %s", string(body))
 	}
 
-	var telegramResp models.NotificationResponse
+	var telegramResp NotificationResponse
 	if err := json.Unmarshal(body, &telegramResp); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal response: %w", err)
 	}
