@@ -11,12 +11,13 @@ import (
 
 	"monitoring-platform/config"
 	"monitoring-platform/internal/models"
-
+	"monitoring-platform/internal/repository"
 )
 
 type TelegramService struct {
 	config *config.Config
 	client *http.Client
+	storage repository.Storage
 }
 
 type NotificationResponse struct {
@@ -25,7 +26,7 @@ type NotificationResponse struct {
 	Result *models.SentNotification `json:"result,omitempty"`
 }
 
-func NewTelegramService(cfg *config.Config) *TelegramService {
+func NewTelegramService(cfg *config.Config, storage repository.Storage) *TelegramService {
 	timeout := time.Duration(cfg.Telegram.Timeout) * time.Second
 	
 	client := &http.Client{
@@ -33,9 +34,40 @@ func NewTelegramService(cfg *config.Config) *TelegramService {
 	}
 
 	return &TelegramService{
-		config: cfg,
-		client: client,
+		config:  cfg,
+		client:  client,
+		storage: storage,
 	}
+}
+
+// ProcessEntity обрабатывает сущности и сохраняет их в репозиторий
+func (s *TelegramService) ProcessEntity(entity any) error {
+	// Сохраняем входящую сущность (происходит проверка типа)
+	if err := s.storage.Store(entity); err != nil {
+		return fmt.Errorf("failed to store entity: %w", err)
+	}
+	
+	// Дополнительная логика в зависимости от типа
+	switch v := entity.(type) {
+	case *models.Notification:
+		// Отправляем уведомление и получаем ответ от Telegram
+		sentNotif, err := s.SendNotification(v.Text)
+		if err != nil {
+			return err
+		}
+		
+		// Сохраняем ответ от Telegram (SentNotification)
+		if sentNotif != nil {
+			if err := s.storage.Store(sentNotif); err != nil {
+				log.Printf("Failed to store sent notification: %v", err)
+			}
+		}
+	case *models.SentNotification:
+		// Если это SentNotification - просто логируем
+		log.Printf("Sent notification stored: MessageID=%d, ChatID=%d", v.MessageID, v.ChatID)
+	}
+	
+	return nil
 }
 
 // SendNotification отправляет уведомление в Telegram

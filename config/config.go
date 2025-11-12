@@ -86,7 +86,7 @@ func LoadConfigWithDefaults(configPath string) *Config {
 func DefaultConfig() *Config {
 	return &Config{
 		Telegram: TelegramConfig{
-			Timeout: 10,
+			Timeout: 500,
 			Debug:   false,
 		},
 		App: AppConfig{
