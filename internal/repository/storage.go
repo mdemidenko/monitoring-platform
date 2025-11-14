@@ -27,13 +27,13 @@ func (m *MemoryStorage) Store(entity any) error {
 	switch v := entity.(type) {
 	case *models.Notification:
 		m.notifications = append(m.notifications, v)
-		return nil
 	case *models.SentNotification:
 		m.sentNotifications = append(m.sentNotifications, v)
-		return nil
 	default:
 		return fmt.Errorf("unsupported entity type: %T", v)
 	}
+
+	return nil
 }
 
 func (m *MemoryStorage) GetNotifications() []*models.Notification {
