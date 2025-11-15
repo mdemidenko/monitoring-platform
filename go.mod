@@ -1,4 +1,4 @@
-module monitoring-platform
+module github.com/mdemidenko/monitoring-platform
 
 go 1.25.3
 

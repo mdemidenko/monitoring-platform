@@ -9,9 +9,9 @@ import (
 	"net/http"
 	"time"
 
-	"monitoring-platform/config"
-	"monitoring-platform/internal/models"
-	"monitoring-platform/internal/repository"
+	"github.com/mdemidenko/monitoring-platform/config"
+	"github.com/mdemidenko/monitoring-platform/internal/models"
+	"github.com/mdemidenko/monitoring-platform/internal/repository"
 )
 
 type TelegramService struct {

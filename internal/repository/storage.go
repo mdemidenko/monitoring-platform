@@ -2,7 +2,7 @@ package repository
 
 import (
 	"fmt"
-	"monitoring-platform/internal/models"
+	"github.com/mdemidenko/monitoring-platform/internal/models"
 )
 
 type Storage interface {
