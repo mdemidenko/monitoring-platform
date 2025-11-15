@@ -2,10 +2,10 @@ package main
 
 import (
 	"log"
-	"monitoring-platform/config"
-	"monitoring-platform/internal/models"
-	"monitoring-platform/internal/notifier"
-	"monitoring-platform/internal/repository"
+	"github.com/mdemidenko/monitoring-platform/config"
+	"github.com/mdemidenko/monitoring-platform/internal/models"
+	"github.com/mdemidenko/monitoring-platform/internal/notifier"
+	"github.com/mdemidenko/monitoring-platform/internal/repository"
 )
 
 func main() {
