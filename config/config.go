@@ -10,6 +10,18 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+type FileConfig struct {
+	InputFile  string
+	OutputFile string
+}
+
+func FileLoadConfig() FileConfig {
+	return FileConfig{
+		InputFile:  "services.json",
+		OutputFile: "filtered_services.json",
+	}
+}
+
 type TelegramConfig struct {
 	BotToken string `yaml:"bot_token" json:"bot_token"`
 	ChatID   string `yaml:"chat_id" json:"chat_id"`
