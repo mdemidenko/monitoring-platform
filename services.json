@@ -1,0 +1,148 @@
+[
+{
+    "id": 573,
+    "collaboration": 2,
+    "name": "smesre-passport",
+    "description": "Сервис отвечающий за sme паспорта",
+    "tenant": "smesre",
+    "repoUrl": "https://gitlab.bnk.ru/smesre/passport-service",
+    "owners": [
+      "sme-sre"
+    ],
+    "unit": "B2B SRE",
+    "type": "backend",
+    "ciPipeline": "own",
+    "cdPipeline": "sme-ci-cd/deploy:pipelines/app/single-app/default-pipeline",
+    "deployPlatform": "k8s",
+    "contributors": [
+      "Your Name \u003Cyou@example.com\u003E"
+    ],
+    "created_date": "2023-11-15T00:00:00Z",
+    "last_updated": "2025-11-14T13:38:02.696879Z",
+    "deprecated_date": "0001-01-01T00:00:00Z",
+    "oncall": "https://oncall.bnk.ru/team/SME-SRE",
+    "team": "https://my.bnk.ru/structure/resource/units/3ade8281-4bfd-4e1b-8411-e4d57e6b6d86",
+    "links": {
+      "Archrepo": "",
+      "Grafana": "",
+      "Jira": "https://jira.bnk.ru/issues/?jql=project%3D%22SMESRE%22+AND+component%3D%22Infra%22",
+      "SLA": "",
+      "Sage": "https://sage.bnk.ru/search?query=logs+group%3D%22ibul_prod%22+AND+system%3D%22smesre-passport%22",
+      "Team": "https://my.bnk.ru/structure/resource/units/3ade8281-4bfd-4e1b-8411-e4d57e6b6d86",
+      "Time": "https://time.bnk.ru/bnk/channels/sme_sre",
+      "Wiki": ""
+    },
+    "labels": {
+      "finedog_id": "20110",
+      "lang": "golang"
+    },
+    "secData": {
+      "processedData": "Информация по релизам сервисов SME",
+      "labels": {
+        "CD": false,
+        "COMSEC": false,
+        "PCIDSS": false,
+        "PD": false,
+        "PI": false
+      }
+    },
+    "logsGroup": "ibul_prod",
+    "finedogId": 20110,
+    "businessLine": "Управление разработки решений для бизнеса и Центр оптимизации процессов поставки",
+    "serviceType": "prod"
+  },
+  {
+    "id": 459,
+    "collaboration": 3,
+    "name": "sales-messenger-api",
+    "description": "API SAAS Мессенджера",
+    "tenant": "sme-sales-messenger",
+    "repoUrl": "https://gitlab.bnk.ru/sme-sales-messenger/sales-messenger-api",
+    "owners": [
+      "ecomm_sites_dev"
+    ],
+    "unit": "Sites Builder",
+    "type": "backend",
+    "ciPipeline": "sme-ci-cd/scala:pipelines/app/default-pipeline",
+    "cdPipeline": "sme-ci-cd/deploy:pipelines/app/single-app/default-pipeline",
+    "deployPlatform": "k8s",
+    "contributors": [],
+    "created_date": "2023-06-27T00:00:00Z",
+    "last_updated": "2025-10-24T06:11:02.693963Z",
+    "deprecated_date": "0001-01-01T00:00:00Z",
+    "oncall": "https://oncall.bnk.ru/team/SME_Ecomm_Sites_Greenflag",
+    "team": "https://my.bnk.ru/structure/resource/units/997db3bb-d1a5-4cba-97cd-1600bd8969bf",
+    "links": {
+      "Archrepo": "https://arch-repo.pages.devplatform.bnk.ru/archrepo/master/systems/ecommerce/sites/sales-messenger/",
+      "SLA": "",
+      "Sage": "https://sage.bnk.ru?shortLink=V4mBHXpEJ8",
+      "Team": "https://my.bnk.ru/structure/resource/units/997db3bb-d1a5-4cba-97cd-1600bd8969bf",
+      "Time": "https://time.bnk.ru/bnk/channels/ecomm_sites",
+      "Wiki": "https://wiki.bnk.ru/pages/viewpage.action?pageId=268754521"
+    },
+    "labels": {
+      "finedog_id": "24610",
+      "lang": "scala"
+    },
+    "secData": {
+      "processedData": "API-запросы и ответы",
+      "labels": {
+        "CD": false,
+        "COMSEC": false,
+        "PCIDSS": false,
+        "PD": false,
+        "PI": false
+      }
+    },
+    "logsGroup": "ibul_prod",
+    "finedogId": 24610,
+    "businessLine": "Управление технологий нефинансовых сервисов",
+    "serviceType": "prod"
+  },
+  {
+    "id": 488,
+    "collaboration": 4,
+    "name": "operfeed-source-topics-proxy-ops",
+    "description": "Сервис для реплицирования топика от ops в кастомный топик оперфида на QA",
+    "tenant": "sme-operations",
+    "repoUrl": "https://gitlab.bnk.ru/sme-operations/operfeed-source-topics-proxy",
+    "owners": [
+      "sme-rko-operfeed-back"
+    ],
+    "unit": "Отдел разработки финансовых продуктов",
+    "type": "backend",
+    "ciPipeline": "own",
+    "cdPipeline": "sme-ci-cd/deploy:pipelines/app/single-app/default-pipeline",
+    "deployPlatform": "k8s",
+    "contributors": [],
+    "created_date": "0001-01-01T00:00:00Z",
+    "last_updated": "2025-05-07T12:40:03.936402Z",
+    "deprecated_date": "2025-05-07T12:40:03.935604Z",
+    "oncall": "https://oncall.bnk.ru/team/RKO OperFeed",
+    "team": "https://my.bnk.ru/structure/resource/units/0631dc17-bbaa-4863-a140-24222eb92002",
+    "links": {
+      "Archrepo": "",
+      "SLA": "",
+      "Team": "https://my.bnk.ru/structure/resource/units/0631dc17-bbaa-4863-a140-24222eb92002",
+      "Time": "https://time.bnk.ru/bnk/channels/rko_operfeed_support",
+      "Wiki": "https://wiki.bnk.ru/display/OPERFEED"
+    },
+    "labels": {
+      "lang": "external"
+    },
+    "secData": {
+      "processedData": "Обрабатывает информацию об операциях на QA",
+      "labels": {
+        "CD": false,
+        "COMSEC": false,
+        "PCIDSS": false,
+        "PD": false,
+        "PI": false
+      }
+    },
+    "logsGroup": "ibul_prod",
+    "finedogId": null,
+    "businessLine": "Управление разработки решений для бизнеса и Центр оптимизации процессов поставки",
+    "serviceType": "prod"
+  }
+]
