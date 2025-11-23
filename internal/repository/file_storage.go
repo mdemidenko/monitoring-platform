@@ -41,18 +41,27 @@ func (r *repository) GetServices() ([]models.Service, error) {
 }
 
 func (r *repository) SaveResults(results []models.Result) error {
-	file, err := os.Create(r.outputFile)
-	if err != nil {
-		return fmt.Errorf("ошибка создания файла: %w", err)
-	}
-	defer file.Close()
-
-	encoder := json.NewEncoder(file)
-	encoder.SetIndent("", "  ")
-
-	if err := encoder.Encode(results); err != nil {
-		return fmt.Errorf("ошибка записи JSON: %w", err)
-	}
-
-	return nil
+    file, err := os.Create(r.outputFile)
+    if err != nil {
+        return fmt.Errorf("ошибка создания файла: %w", err)
+    }
+    
+    // Записываем данные
+    encoder := json.NewEncoder(file)
+    encoder.SetIndent("", "  ")
+    
+    encodeErr := encoder.Encode(results)
+    
+    // Закрываем файл и проверяем ошибку
+    closeErr := file.Close()
+    
+    // Возвращаем первую возникшую ошибку
+    if encodeErr != nil {
+        return fmt.Errorf("ошибка записи JSON: %w", encodeErr)
+    }
+    if closeErr != nil {
+        return fmt.Errorf("ошибка закрытия файла: %w", closeErr)
+    }
+    
+    return nil
 }
