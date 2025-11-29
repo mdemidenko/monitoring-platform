@@ -120,21 +120,6 @@ func (s *TelegramService) sendNotificationsWithIntervals(ctx context.Context, no
 	}
 }
 
-// sendAllNotifications отправляет все уведомления сразу
-func (s *TelegramService) sendAllNotifications(ctx context.Context, notifications []*models.Notification, jobs chan<- *models.Notification) {
-	for i, notification := range notifications {
-		select {
-		case <-ctx.Done():
-			log.Println("⏹️  Прерывание отправки уведомлений по сигналу")
-			close(jobs)
-			return
-		default:
-			log.Printf("📨 Постановка в очередь уведомления %d: %s", i+1, notification.Text)
-			jobs <- notification
-		}
-	}
-	close(jobs)
-}
 
 // notificationWorker обрабатывает уведомления из канала jobs
 func (s *TelegramService) notificationWorker(ctx context.Context, workerID int, wg *sync.WaitGroup, jobs <-chan *models.Notification, results chan<- *workerResult) {
