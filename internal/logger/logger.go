@@ -1,6 +1,7 @@
 package logger
 
 import (
+	"context"
 	"log"
 	"time"
 
@@ -13,7 +14,6 @@ type StorageLogger struct {
 	storage    *repository.MemoryStorage
 	interval   time.Duration
 	isRunning  bool
-	stopChan   chan bool
 }
 
 // NewStorageLogger создает новый логгер хранилища
@@ -21,13 +21,12 @@ func NewStorageLogger(storage *repository.MemoryStorage, interval time.Duration)
 	return &StorageLogger{
 		storage:   storage,
 		interval:  interval,
-		stopChan:  make(chan bool),
 		isRunning: false,
 	}
 }
 
-// Start запускает логгер в отдельной горутине
-func (sl *StorageLogger) Start() {
+// Start запускает логгер в отдельной горутине с поддержкой контекста
+func (sl *StorageLogger) Start(ctx context.Context) {
 	if sl.isRunning {
 		log.Printf("📊 Логгер хранилища уже запущен")
 		return
@@ -36,7 +35,7 @@ func (sl *StorageLogger) Start() {
 	sl.isRunning = true
 	log.Printf("📊 Логгер хранилища запущен (интервал проверки: %v)", sl.interval)
 
-	go sl.monitor()
+	go sl.monitor(ctx)
 }
 
 // Stop останавливает логгер
@@ -45,13 +44,12 @@ func (sl *StorageLogger) Stop() {
 		return
 	}
 
-	sl.stopChan <- true
 	sl.isRunning = false
 	log.Printf("📊 Логгер хранилища остановлен")
 }
 
 // monitor осуществляет мониторинг изменений в хранилище
-func (sl *StorageLogger) monitor() {
+func (sl *StorageLogger) monitor(ctx context.Context) {
 	// Состояние для отслеживания изменений
 	lastNotifications := make([]*models.Notification, 0)
 	lastSentNotifications := make([]*models.SentNotification, 0)
@@ -63,7 +61,8 @@ func (sl *StorageLogger) monitor() {
 
 	for {
 		select {
-		case <-sl.stopChan:
+		case <-ctx.Done():
+			log.Printf("📊 Логгер хранилища получил сигнал завершения")
 			return
 		case <-ticker.C:
 			sl.checkForChanges(&lastNotifications, &lastSentNotifications, 

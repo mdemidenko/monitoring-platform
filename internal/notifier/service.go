@@ -2,6 +2,7 @@ package notifier
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -15,8 +16,8 @@ import (
 )
 
 type TelegramService struct {
-	config *config.Config
-	client *http.Client
+	config  *config.Config
+	client  *http.Client
 	storage repository.Storage
 }
 
@@ -41,7 +42,12 @@ func NewTelegramService(cfg *config.Config, storage repository.Storage) *Telegra
 }
 
 // ProcessEntity обрабатывает сущности и сохраняет их в репозиторий
-func (s *TelegramService) ProcessEntity(entity any) error {
+func (s *TelegramService) ProcessEntity(ctx context.Context, entity any) error {
+	// Проверяем контекст перед началом работы
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("operation cancelled: %w", err)
+	}
+	
 	// Сохраняем входящую сущность (происходит проверка типа)
 	if err := s.storage.Store(entity); err != nil {
 		return fmt.Errorf("failed to store entity: %w", err)
@@ -51,7 +57,7 @@ func (s *TelegramService) ProcessEntity(entity any) error {
 	switch v := entity.(type) {
 	case *models.Notification:
 		// Отправляем уведомление и получаем ответ от Telegram
-		sentNotif, err := s.SendNotification(v.Text)
+		sentNotif, err := s.SendNotification(ctx, v.Text)
 		if err != nil {
 			return err
 		}
@@ -71,7 +77,11 @@ func (s *TelegramService) ProcessEntity(entity any) error {
 }
 
 // SendNotification отправляет уведомление в Telegram
-func (s *TelegramService) SendNotification(text string) (*models.SentNotification, error) {
+func (s *TelegramService) SendNotification(ctx context.Context, text string) (*models.SentNotification, error) {
+	// Проверяем контекст перед началом
+	if err := ctx.Err(); err != nil {
+		return nil, fmt.Errorf("operation cancelled: %w", err)
+	}
 
 	notification := models.NewNotification(s.config.Telegram.ChatID, text)
 
@@ -85,7 +95,7 @@ func (s *TelegramService) SendNotification(text string) (*models.SentNotificatio
 	}
 
 	url := fmt.Sprintf("https://api.telegram.org/bot%s/sendMessage", s.config.Telegram.BotToken)
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
