@@ -1,8 +1,11 @@
 package main
 
 import (
+	"context"
 	"log"
-	"sync"
+	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/mdemidenko/monitoring-platform/config"
@@ -13,6 +16,10 @@ import (
 )
 
 func main() {
+	// Создаем контекст с возможностью отмены
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	// Загружаем конфигурацию
 	cfg, err := config.LoadConfig("")
 	if err != nil {
@@ -22,12 +29,11 @@ func main() {
 	// Создаем репозиторий для слайсов
 	storage := repository.NewMemoryStorage()
 
-	// Создаем и запускаем логгер хранилища
+	// Создаем и запускаем логгер хранилища с контекстом
 	storageLogger := logger.NewStorageLogger(storage, 200*time.Millisecond)
-	storageLogger.Start()
-	defer storageLogger.Stop()
+	storageLogger.Start(ctx)
 
-	// Создаем сервис и передаем в него репозиторий
+	// Создаем сервис
 	telegramService := notifier.NewTelegramService(cfg, storage)
 
 	// Проверяем здоровье бота
@@ -43,105 +49,55 @@ func main() {
 		{ChatID: cfg.Telegram.ChatID, Text: "📊 Статистика работы"},
 	}
 
-	log.Printf("Начинаем параллельную обработку %d уведомлений...", len(notifications))
+	log.Printf("Начинаем обработку %d уведомлений с интервалами...", len(notifications))
 
-	// Параллельная обработка с горутинами и каналами
-	successCount, errorCount := processNotificationsParallel(telegramService, notifications)
+	// Канал для получения сигналов ОС
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 
-	// Даем время логгеру обработать последние изменения
-	time.Sleep(300 * time.Millisecond)
+	// Запускаем обработку уведомлений в отдельной горутине
+	results := make(chan notifier.ProcessResult, 1)
+	go func() {
+		result := telegramService.ProcessWithIntervals(ctx, notifications, 2*time.Second, 2)
+		results <- result
+	}()
 
-	log.Printf("\n=== ИТОГИ ПАРАЛЛЕЛЬНОЙ ОБРАБОТКИ ===")
-	log.Printf("Успешно отправлено: %d", successCount)
-	log.Printf("Ошибок: %d", errorCount)
+	// Ожидаем либо завершения обработки, либо сигнала ОС
+	select {
+	case <-sigChan:
+		log.Println("🚨 Получен сигнал завершения, начинаем graceful shutdown...")
+		cancel()
+		
+		// Даем время на graceful shutdown
+		select {
+		case result := <-results:
+			printResults(result)
+		case <-time.After(5 * time.Second):
+			log.Println("⚠️  Таймаут graceful shutdown, принудительное завершение")
+		}
+	case result := <-results:
+		printResults(result)
+		log.Println("🔄 Завершаем логгер...")
+		cancel()
+		time.Sleep(300 * time.Millisecond)
+	}
 
 	// Выводим статистику хранилища
+	printStorageStats(storage)
+	log.Println("👋 Приложение завершено")
+}
+
+// printResults выводит итоги обработки
+func printResults(result notifier.ProcessResult) {
+	log.Printf("\n=== ИТОГИ ОБРАБОТКИ ===")
+	log.Printf("Успешно отправлено: %d", result.SuccessCount)
+	log.Printf("Ошибок: %d", result.ErrorCount)
+}
+
+// printStorageStats выводит статистику хранилища
+func printStorageStats(storage *repository.MemoryStorage) {
 	log.Printf("\n=== СТАТИСТИКА ХРАНИЛИЩА ===")
-	log.Printf("Созданных Notification в слайсе: %d", len(storage.GetNotifications()))
-	log.Printf("Отправленных SentNotification в слайсе: %d", len(storage.GetSentNotifications()))
+	log.Printf("Созданных Notification: %d", len(storage.GetNotifications()))
+	log.Printf("Отправленных SentNotification: %d", len(storage.GetSentNotifications()))
 	log.Printf("Всего элементов: %d", len(storage.GetNotifications())+len(storage.GetSentNotifications()))
-}
-
-// processNotificationsParallel обрабатывает уведомления параллельно с использованием горутин и каналов
-func processNotificationsParallel(service *notifier.TelegramService, notifications []*models.Notification) (successCount, errorCount int) {
-	// Создаем каналы для коммуникации
-	jobs := make(chan *models.Notification, len(notifications))    // Канал для заданий
-	results := make(chan *processResult, len(notifications))       // Канал для результатов
-	done := make(chan bool)                                        // Канал для сигнала завершения
-
-	var wg sync.WaitGroup
-
-	// Запускаем worker'ы (горутины)
-	numWorkers := 2
-	
-	// Можно настроить количество параллельных worker'ов
-	for i := 0; i < numWorkers; i++ {
-		wg.Add(1)
-		go notificationWorker(i+1, &wg, jobs, results, service)
-	}
-
-	// Отправляем уведомления в канал jobs
-	go func() {
-		for i, notification := range notifications {
-			log.Printf("📨 Постановка в очередь уведомления %d: %s", i+1, notification.Text)
-			jobs <- notification
-		}
-		close(jobs) // Закрываем канал после отправки всех заданий
-	}()
-
-	// Ждем завершения всех worker'ов и закрываем канал results
-	go func() {
-		wg.Wait()
-		close(results)
-		done <- true
-	}()
-
-	// Обрабатываем результаты из канала results
-	successCount = 0
-	errorCount = 0
-
-	// Читаем результаты пока канал не закроется
-	for result := range results {
-		if result.Error != nil {
-			log.Printf("❌ Ошибка обработки уведомления '%s': %v", result.Text, result.Error)
-			errorCount++
-		} else {
-			log.Printf("✅ Уведомление успешно обработано: %s", result.Text)
-			successCount++
-		}
-	}
-
-	// Ждем сигнал завершения
-	<-done
-
-	return successCount, errorCount
-}
-
-// processResult результат обработки уведомления
-type processResult struct {
-	Text  string
-	Error error
-}
-
-// notificationWorker обрабатывает уведомления из канала jobs
-func notificationWorker(workerID int, wg *sync.WaitGroup, jobs <-chan *models.Notification, results chan<- *processResult, service *notifier.TelegramService) {
-	defer wg.Done()
-
-	log.Printf("Worker %d запущен", workerID)
-
-	// Читаем уведомления из канала пока он не закроется
-	for notification := range jobs {
-		log.Printf("Worker %d обрабатывает: %s", workerID, notification.Text)
-
-		// Обрабатываем уведомление
-		err := service.ProcessEntity(notification)
-
-		// Отправляем результат в канал results
-		results <- &processResult{
-			Text:  notification.Text,
-			Error: err,
-		}
-	}
-
-	log.Printf("👷 Worker %d завершил работу", workerID)
 }
