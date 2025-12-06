@@ -6,20 +6,36 @@ import (
 	"log"
 	"os"
 	"path/filepath"
-
+	"time"
 	"gopkg.in/yaml.v3"
 )
 
 type FileConfig struct {
-	InputFile  string
-	OutputFile string
+    InputFile        string
+    OutputFile       string
+    Workers          int           // количество воркеров для параллельной обработки
+    BatchSize        int           // размер батча для обработки
+    ShutdownTimeout  time.Duration // время для graceful shutdown
 }
 
 func FileLoadConfig() FileConfig {
-	return FileConfig{
-		InputFile:  "services.json",
-		OutputFile: "filtered_services.json",
-	}
+    // Добавляем флаги командной строки
+    var workers int
+    var batchSize int
+    var shutdownTimeout int
+    
+    flag.IntVar(&workers, "workers", 1, "количество воркеров для параллельной обработки")
+    flag.IntVar(&batchSize, "batch", 10, "размер батча обработки")
+    flag.IntVar(&shutdownTimeout, "timeout", 30, "таймаут graceful shutdown в секундах")
+    flag.Parse()
+    
+    return FileConfig{
+        InputFile:       "services.json",
+        OutputFile:      "filtered_services.json",
+        Workers:         workers,
+        BatchSize:       batchSize,
+        ShutdownTimeout: time.Duration(shutdownTimeout) * time.Second,
+    }
 }
 
 type TelegramConfig struct {

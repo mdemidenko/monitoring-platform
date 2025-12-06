@@ -1,67 +1,127 @@
 package repository
 
-
 import (
-	"encoding/json"
-	"fmt"
-	"os"
+    "context"
+    "encoding/json"
+    "fmt"
+    "os"
 
-	"github.com/mdemidenko/monitoring-platform/internal/models"
+    "github.com/mdemidenko/monitoring-platform/internal/models"
 )
 
 type Repository interface {
-	GetServices() ([]models.Service, error)
-	SaveResults(results []models.Result) error
+    GetServices(ctx context.Context) (<-chan models.Service, <-chan error)
+    SaveResults(ctx context.Context, results <-chan models.Result) <-chan error
 }
 
 type repository struct {
-	inputFile  string
-	outputFile string
+    inputFile  string
+    outputFile string
 }
 
 func NewRepository(inputFile, outputFile string) Repository {
-	return &repository{
-		inputFile:  inputFile,
-		outputFile: outputFile,
-	}
+    return &repository{
+        inputFile:  inputFile,
+        outputFile: outputFile,
+    }
 }
 
-func (r *repository) GetServices() ([]models.Service, error) {
-	data, err := os.ReadFile(r.inputFile)
-	if err != nil {
-		return nil, fmt.Errorf("ошибка чтения файла: %w", err)
-	}
+// GetServices читает сервисы и отправляет в канал
+func (r *repository) GetServices(ctx context.Context) (<-chan models.Service, <-chan error) {
+    servicesChan := make(chan models.Service, 100)
+    errChan := make(chan error, 1)
 
-	var services []models.Service
-	if err := json.Unmarshal(data, &services); err != nil {
-		return nil, fmt.Errorf("ошибка парсинга JSON: %w", err)
-	}
+    go func() {
+        defer close(servicesChan)
+        defer close(errChan)
 
-	return services, nil
+        // Проверяем контекст перед началом чтения
+        if ctx.Err() != nil {
+            errChan <- ctx.Err()
+            return
+        }
+
+        data, err := os.ReadFile(r.inputFile)
+        if err != nil {
+            errChan <- fmt.Errorf("ошибка чтения файла: %w", err)
+            return
+        }
+
+        var services []models.Service
+        if err := json.Unmarshal(data, &services); err != nil {
+            errChan <- fmt.Errorf("ошибка парсинга JSON: %w", err)
+            return
+        }
+
+        // Отправляем сервисы в канал с проверкой контекста
+        for _, service := range services {
+            select {
+            case <-ctx.Done():
+                errChan <- ctx.Err()
+                return
+            case servicesChan <- service:
+            }
+        }
+    }()
+
+    return servicesChan, errChan
 }
 
-func (r *repository) SaveResults(results []models.Result) error {
+// SaveResults сохраняет результаты из канала в файл
+func (r *repository) SaveResults(ctx context.Context, results <-chan models.Result) <-chan error {
+    errChan := make(chan error, 1)
+
+    go func() {
+        defer close(errChan)
+
+        var allResults []models.Result
+        
+        for {
+            select {
+            case <-ctx.Done():
+                // Пытаемся сохранить то, что успели собрать
+                if len(allResults) > 0 {
+                    if err := r.saveToFile(allResults); err != nil {
+                        errChan <- fmt.Errorf("ошибка сохранения при отмене: %w", err)
+                        return
+                    }
+                }
+                errChan <- ctx.Err()
+                return
+                
+            case result, ok := <-results:
+                if !ok {
+                    // Канал закрыт, сохраняем все результаты
+                    if err := r.saveToFile(allResults); err != nil {
+                        errChan <- err
+                    }
+                    return
+                }
+                allResults = append(allResults, result)
+            }
+        }
+    }()
+
+    return errChan
+}
+
+// saveToFile - внутренний метод сохранения
+func (r *repository) saveToFile(results []models.Result) error {
+    if len(results) == 0 {
+        return nil // ничего не сохраняем
+    }
+    
     file, err := os.Create(r.outputFile)
     if err != nil {
         return fmt.Errorf("ошибка создания файла: %w", err)
     }
-    
-    // Записываем данные
+
     encoder := json.NewEncoder(file)
     encoder.SetIndent("", "  ")
-    
-    encodeErr := encoder.Encode(results)
-    
-    // Закрываем файл и проверяем ошибку
-    closeErr := file.Close()
-    
-    // Возвращаем первую возникшую ошибку
-    if encodeErr != nil {
-        return fmt.Errorf("ошибка записи JSON: %w", encodeErr)
+
+    if err := encoder.Encode(results); err != nil {
+        return fmt.Errorf("ошибка записи JSON: %w", err)
     }
-    if closeErr != nil {
-        return fmt.Errorf("ошибка закрытия файла: %w", closeErr)
-    }
-    
+
     return nil
 }
