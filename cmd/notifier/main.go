@@ -21,6 +21,7 @@ func main() {
 	defer cancel()
 
 	// Загружаем конфигурацию
+	
 	cfg, err := config.LoadConfig("")
 	if err != nil {
 		log.Fatal(err)
