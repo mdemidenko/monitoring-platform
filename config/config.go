@@ -9,6 +9,15 @@ import (
 	"time"
 	"gopkg.in/yaml.v3"
 )
+type ServerConfig struct {
+	Port           string   `yaml:"port" json:"port"`
+	Host           string   `yaml:"host" json:"host"`
+	Timeout        int      `yaml:"timeout" json:"timeout"`
+	GinMode        string   `yaml:"gin_mode" json:"gin_mode"`
+	EnableCORS     bool     `yaml:"enable_cors" json:"enable_cors"`
+	TrustedProxies []string `yaml:"trusted_proxies" json:"trusted_proxies"`
+}
+
 
 type FileConfig struct {
     InputFile        string
@@ -60,6 +69,7 @@ type Config struct {
 	Telegram TelegramConfig `yaml:"telegram" json:"telegram"`
 	App      AppConfig      `yaml:"app" json:"app"`
 	Logging  LoggingConfig  `yaml:"logging" json:"logging"`
+	Server   ServerConfig   `yaml:"server" json:"server"`
 }
 
 // LoadConfig загружает конфигурацию из YAML файла
@@ -126,6 +136,14 @@ func DefaultConfig() *Config {
 			Level:  "info",
 			Format: "text",
 		},
+		Server: ServerConfig{
+			Port:           "8080",
+			Host:           "localhost",
+			Timeout:        30,
+			GinMode:        "debug",
+			EnableCORS:     true,
+			TrustedProxies: []string{"127.0.0.1"},
+		},
 	}
 }
 
@@ -139,6 +157,9 @@ func (c *Config) Validate() error {
 	}
 	if c.Telegram.Timeout <= 0 {
 		return fmt.Errorf("telegram.timeout must be positive")
+	}
+	if c.Server.Port == "" {
+		c.Server.Port = "8080"
 	}
 
 	validEnvironments := map[string]bool{
