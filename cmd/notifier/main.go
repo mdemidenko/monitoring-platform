@@ -13,7 +13,27 @@ import (
 	"github.com/mdemidenko/monitoring-platform/internal/logger"
 	"github.com/mdemidenko/monitoring-platform/internal/notifier"
 	"github.com/mdemidenko/monitoring-platform/internal/repository"
+	_ "github.com/mdemidenko/monitoring-platform/docs"
 )
+
+// @title Monitoring Platform API
+// @version 1.0
+// @description API для отправки уведомлений через Telegram
+// @termsOfService http://swagger.io/terms/
+
+// @contact.name API Support
+// @contact.url http://www.swagger.io/support
+// @contact.email support@swagger.io
+
+// @license.name Apache 2.0
+// @license.url http://www.apache.org/licenses/LICENSE-2.0.html
+
+// @host localhost:8080
+// @BasePath /api
+
+// @securityDefinitions.apikey BearerAuth
+// @in header
+// @name Authorization
 
 func main() {
 	// Создаем контекст с возможностью отмены

@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	swaggerFiles "github.com/swaggo/files"
+	ginSwagger "github.com/swaggo/gin-swagger"
 	"github.com/mdemidenko/monitoring-platform/config"
 	"github.com/mdemidenko/monitoring-platform/internal/notifier"
 	"github.com/mdemidenko/monitoring-platform/internal/repository"
@@ -128,6 +130,12 @@ func corsMiddleware() gin.HandlerFunc {
 
 // setupRoutes настраивает маршруты API
 func (s *Server) setupRoutes() {
+	// Swagger UI документация
+	s.router.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler, 
+		ginSwagger.URL("/swagger/doc.json"),
+		ginSwagger.DefaultModelsExpandDepth(-1),
+	))
+	
 	// Группа API v1
 	api := s.router.Group("/api")
 	{
@@ -150,7 +158,8 @@ func (s *Server) setupRoutes() {
 			"service": "Telegram Notification Service",
 			"version": s.cfg.App.Version,
 			"status":  "running",
-			"docs":    "/api/health",
+			"docs":    "/swagger/index.html",
+			"api":     "/api/health",
 		})
 	})
 	
@@ -160,6 +169,7 @@ func (s *Server) setupRoutes() {
 			"error":   "Not found",
 			"message": "The requested route does not exist",
 			"path":    c.Request.URL.Path,
+			"docs":    "/swagger/index.html",
 		})
 	})
 }
@@ -187,7 +197,9 @@ func (s *Server) Start(port string) {
 	log.Printf("   POST %s/api/send", addr)
 	log.Printf("   POST %s/api/batch", addr)
 	log.Printf("   GET  %s/api/notifications", addr)
+	log.Printf("   GET  %s/api/notifications/sent", addr)
 	log.Printf("   GET  %s/api/status", addr)
+	log.Printf("📚 Swagger UI: %s/swagger/index.html", addr)
 	
 	if err := s.httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		log.Fatalf("❌ Ошибка сервера: %v", err)
