@@ -18,7 +18,7 @@ import (
 
 // @title Monitoring Platform API
 // @version 1.0
-// @description API для отправки уведомлений через Telegram
+// @description API для отправки уведомлений через Telegram с JWT аутентификацией
 // @termsOfService http://swagger.io/terms/
 
 // @contact.name API Support
@@ -28,13 +28,25 @@ import (
 // @license.name Apache 2.0
 // @license.url http://www.apache.org/licenses/LICENSE-2.0.html
 
-// @host 127.0.0.1:8080
-// @BasePath /
+// @host localhost:8080
+// @BasePath /api
 
 // @securityDefinitions.apikey BearerAuth
 // @in header
 // @name Authorization
-// @description Введите токен в формате: Bearer {token}
+// @description Введите JWT токен в формате: Bearer {your_jwt_token}
+
+// @tag.name auth
+// @tag.description Эндпоинты для аутентификации
+
+// @tag.name health
+// @tag.description Проверка состояния сервиса
+
+// @tag.name notifications
+// @tag.description Управление уведомлениями
+
+// @tag.name status
+// @tag.description Статус и статистика сервиса
 
 func main() {
 	// Создаем контекст с возможностью отмены

@@ -3,11 +3,11 @@ package api
 import (
 	"net/http"
 
-	"github.com/gin-gonic/gin"
 )
 
-// ErrorResponse универсальный ответ на ошибку
+// ErrorResponse представляет ответ об ошибке
 // @Description Стандартный ответ при возникновении ошибки
+// @name ErrorResponse
 type ErrorResponse struct {
 	// Флаг успешного выполнения (всегда false)
 	Success bool `json:"success" example:"false"`
@@ -21,92 +21,58 @@ type ErrorResponse struct {
 	Details interface{} `json:"details,omitempty"`
 }
 
-// Предопределенные типы ошибок
-const (
-	ErrTypeBadRequest     = "Bad Request"
-	ErrTypeUnauthorized   = "Unauthorized"
-	ErrTypeForbidden      = "Forbidden"
-	ErrTypeNotFound       = "Not Found"
-	ErrTypeConflict       = "Conflict"
-	ErrTypeInternal       = "Internal Server Error"
-	ErrTypeBadGateway     = "Bad Gateway"
-	ErrTypeServiceUnavailable = "Service Unavailable"
-	ErrTypeValidation     = "Validation Error"
-	ErrTypeRateLimit      = "Rate Limit Exceeded"
-)
-
-// NewErrorResponse создает новый ErrorResponse
-func NewErrorResponse(statusCode int, errorType, message string, details ...interface{}) ErrorResponse {
-	errResp := ErrorResponse{
+// Helper функции для создания ошибок
+func newErrorResponse(statusCode int, errorType, message string, details interface{}) ErrorResponse {
+	return ErrorResponse{
 		Success:    false,
 		StatusCode: statusCode,
 		ErrorType:  errorType,
 		Message:    message,
+		Details:    details,
 	}
-
-	if len(details) > 0 {
-		errResp.Details = details[0]
-	}
-
-	return errResp
 }
 
-// ErrorResponse helpers для разных статусов
+// BadRequestError создает ошибку 400
 func BadRequestError(message string, details ...interface{}) ErrorResponse {
-	return NewErrorResponse(http.StatusBadRequest, ErrTypeBadRequest, message, details...)
-}
-
-func UnauthorizedError(message string, details ...interface{}) ErrorResponse {
-	return NewErrorResponse(http.StatusUnauthorized, ErrTypeUnauthorized, message, details...)
-}
-
-func ForbiddenError(message string, details ...interface{}) ErrorResponse {
-	return NewErrorResponse(http.StatusForbidden, ErrTypeForbidden, message, details...)
-}
-
-func NotFoundError(message string, details ...interface{}) ErrorResponse {
-	return NewErrorResponse(http.StatusNotFound, ErrTypeNotFound, message, details...)
-}
-
-func InternalServerError(message string, details ...interface{}) ErrorResponse {
-	return NewErrorResponse(http.StatusInternalServerError, ErrTypeInternal, message, details...)
-}
-
-func BadGatewayError(message string, details ...interface{}) ErrorResponse {
-	return NewErrorResponse(http.StatusBadGateway, ErrTypeBadGateway, message, details...)
-}
-
-func ServiceUnavailableError(message string, details ...interface{}) ErrorResponse {
-	return NewErrorResponse(http.StatusServiceUnavailable, ErrTypeServiceUnavailable, message, details...)
-}
-
-func ValidationError(message string, details ...interface{}) ErrorResponse {
-	return NewErrorResponse(http.StatusUnprocessableEntity, ErrTypeValidation, message, details...)
-}
-
-// ErrorResponse middleware для стандартной обработки ошибок
-func ErrorHandler() gin.HandlerFunc {
-	return func(c *gin.Context) {
-		c.Next()
-		
-		// Проверяем, есть ли ошибки
-		if len(c.Errors) > 0 {
-			err := c.Errors.Last()
-			
-			var errorResp ErrorResponse
-			
-			// Преобразуем разные типы ошибок
-			switch e := err.Err.(type) {
-			case *gin.Error:
-				// Ошибка Gin
-				errorResp = InternalServerError("Internal server error", e.Error())
-			default:
-				// Общая ошибка
-				errorResp = InternalServerError("Internal server error", e.Error())
-			}
-			
-			c.JSON(errorResp.StatusCode, errorResp)
-			c.Abort()
-		}
+	var detail interface{}
+	if len(details) > 0 {
+		detail = details[0]
 	}
+	return newErrorResponse(http.StatusBadRequest, "Bad Request", message, detail)
+}
+
+// UnauthorizedError создает ошибку 401
+func UnauthorizedError(message string, details ...interface{}) ErrorResponse {
+	var detail interface{}
+	if len(details) > 0 {
+		detail = details[0]
+	}
+	return newErrorResponse(http.StatusUnauthorized, "Unauthorized", message, detail)
+}
+
+// InternalServerError создает ошибку 500
+func InternalServerError(message string, details ...interface{}) ErrorResponse {
+	var detail interface{}
+	if len(details) > 0 {
+		detail = details[0]
+	}
+	return newErrorResponse(http.StatusInternalServerError, "Internal Server Error", message, detail)
+}
+
+// BadGatewayError создает ошибку 502
+func BadGatewayError(message string, details ...interface{}) ErrorResponse {
+	var detail interface{}
+	if len(details) > 0 {
+		detail = details[0]
+	}
+	return newErrorResponse(http.StatusBadGateway, "Bad Gateway", message, detail)
+}
+
+// ServiceUnavailableError создает ошибку 503
+func ServiceUnavailableError(message string, details ...interface{}) ErrorResponse {
+	var detail interface{}
+	if len(details) > 0 {
+		detail = details[0]
+	}
+	return newErrorResponse(http.StatusServiceUnavailable, "Service Unavailable", message, detail)
 }

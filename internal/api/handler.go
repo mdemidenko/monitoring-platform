@@ -34,14 +34,14 @@ func NewHandler(telegramService *notifier.TelegramService, storage *repository.M
 // @Accept json
 // @Produce json
 // @Success 200 {object} HealthResponse "Сервис работает корректно"
-// @Failure 503 {object} ErrorResponse "Сервис недоступен"
+// @Failure 503 {object} api.ErrorResponse "Сервис недоступен"
 // @Router /api/health [get]
 func (h *Handler) HealthHandler(c *gin.Context) {
 	if err := h.telegramService.HealthCheck(); err != nil {
-		c.JSON(http.StatusServiceUnavailable, gin.H{
-			"success": false,
-			"error":   "Telegram service unavailable: " + err.Error(),
-		})
+		c.JSON(http.StatusServiceUnavailable, ServiceUnavailableError(
+			"Telegram service unavailable", 
+			gin.H{"service_error": err.Error()},
+		))
 		return
 	}
 
@@ -66,9 +66,9 @@ func (h *Handler) HealthHandler(c *gin.Context) {
 // @Security BearerAuth
 // @Param request body SendRequest true "Данные для отправки уведомления"
 // @Success 200 {object} SendResponse "Уведомление успешно отправлено"
-// @Failure 400 {object} ErrorResponse "Некорректные данные запроса"
-// @Failure 401 {object} ErrorResponse "Требуется авторизация"
-// @Failure 500 {object} ErrorResponse "Ошибка отправки уведомления"
+// @Failure 400 {object} api.ErrorResponse "Некорректные данные запроса"
+// @Failure 401 {object} api.ErrorResponse "Требуется авторизация"
+// @Failure 500 {object} api.ErrorResponse "Ошибка отправки уведомления"
 // @Router /api/send [post]
 func (h *Handler) SendHandler(c *gin.Context) {
 	var req struct {
@@ -77,10 +77,10 @@ func (h *Handler) SendHandler(c *gin.Context) {
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"success": false,
-			"error":   "Invalid request: " + err.Error(),
-		})
+		c.JSON(http.StatusBadRequest, BadRequestError(
+			"Invalid request data",
+			gin.H{"validation_error": err.Error()},
+		))
 		return
 	}
 
@@ -139,8 +139,8 @@ func (h *Handler) SendHandler(c *gin.Context) {
 // @Security BearerAuth
 // @Param request body BatchRequest true "Данные для пакетной отправки"
 // @Success 200 {object} BatchResponse "Пакетная обработка завершена"
-// @Failure 400 {object} ErrorResponse "Некорректные данные запроса"
-// @Failure 401 {object} ErrorResponse "Требуется авторизация"
+// @Failure 400 {object} api.ErrorResponse "Некорректные данные запроса"
+// @Failure 401 {object} api.ErrorResponse "Требуется авторизация"
 // @Router /api/batch [post]
 func (h *Handler) BatchHandler(c *gin.Context) {
 	var req struct {
@@ -205,7 +205,7 @@ func (h *Handler) BatchHandler(c *gin.Context) {
 // @Produce json
 // @Security BearerAuth
 // @Success 200 {object} NotificationsResponse "Список уведомлений"
-// @Failure 401 {object} ErrorResponse "Требуется авторизация"
+// @Failure 401 {object} api.ErrorResponse "Требуется авторизация"
 // @Router /api/notifications [get]
 func (h *Handler) NotificationsHandler(c *gin.Context) {
 	notifications := h.storage.GetNotifications()
@@ -235,7 +235,7 @@ func (h *Handler) NotificationsHandler(c *gin.Context) {
 // @Produce json
 // @Security BearerAuth
 // @Success 200 {object} SentNotificationsResponse "Список отправленных уведомлений"
-// @Failure 401 {object} ErrorResponse "Требуется авторизация"
+// @Failure 401 {object} api.ErrorResponse "Требуется авторизация"
 // @Router /api/notifications/sent [get]
 func (h *Handler) SentNotificationsHandler(c *gin.Context) {
 	sentNotifications := h.storage.GetSentNotifications()
@@ -265,7 +265,7 @@ func (h *Handler) SentNotificationsHandler(c *gin.Context) {
 // @Produce json
 // @Security BearerAuth
 // @Success 200 {object} StatusResponse "Статус сервиса"
-// @Failure 401 {object} ErrorResponse "Требуется авторизация"
+// @Failure 401 {object} api.ErrorResponse "Требуется авторизация"
 // @Router /api/status [get]
 func (h *Handler) StatusHandler(c *gin.Context) {
 	notifications := h.storage.GetNotifications()
@@ -457,4 +457,36 @@ type StatusResponse struct {
 		// Временная метка
 		Timestamp string `json:"timestamp" example:"2024-01-01T12:00:00Z"`
 	} `json:"data"`
+}
+
+// LoginRequest запрос на аутентификацию
+// @Description Запрос для получения JWT токена
+type LoginRequest struct {
+	// Логин пользователя
+	Username string `json:"username" binding:"required,min=1" example:"admin"`
+	// Пароль пользователя
+	Password string `json:"password" binding:"required,min=1" example:"secure_password"`
+}
+
+// LoginResponse ответ с JWT токеном
+// @Description Ответ с JWT токеном при успешной аутентификации
+type LoginResponse struct {
+	// Флаг успешного выполнения
+	Success bool `json:"success" example:"true"`
+	// JWT токен для авторизации
+	Token string `json:"token" example:"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."`
+	// Время истечения токена
+	ExpiresAt time.Time `json:"expires_at" example:"2024-01-01T12:00:00Z"`
+	// Тип токена
+	TokenType string `json:"token_type" example:"Bearer"`
+}
+
+// AuthError пример ошибки авторизации для Swagger
+// @Description Пример ошибки при неудачной авторизации
+type AuthError struct {
+	Success    bool        `json:"success" example:"false"`
+	StatusCode int         `json:"status_code" example:"401"`
+	ErrorType  string      `json:"error_type" example:"Unauthorized"`
+	Message    string      `json:"message" example:"Invalid username or password"`
+	Details    interface{} `json:"details,omitempty"`
 }

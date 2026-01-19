@@ -6,7 +6,6 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
-	"github.com/mdemidenko/monitoring-platform/internal/api"
 )
 
 // Claims структура для JWT claims
@@ -21,23 +20,31 @@ func AuthMiddleware(jwtSecret string) gin.HandlerFunc {
 		// Получаем Authorization header
 		authHeader := c.GetHeader("Authorization")
 		if authHeader == "" {
-			c.AbortWithStatusJSON(401, api.UnauthorizedError(
-				"Authorization header is required",
-				gin.H{"hint": "Include 'Authorization: Bearer <token>' header"},
-			))
+			c.AbortWithStatusJSON(401, gin.H{
+				"success":     false,
+				"status_code": 401,
+				"error_type":  "Unauthorized",
+				"message":     "Authorization header is required",
+				"details": gin.H{
+					"hint": "Include 'Authorization: Bearer <token>' header",
+				},
+			})
 			return
 		}
 
 		// Проверяем формат Bearer token
 		tokenString := strings.TrimPrefix(authHeader, "Bearer ")
 		if tokenString == authHeader {
-			c.AbortWithStatusJSON(401, api.UnauthorizedError(
-				"Bearer token is required",
-				gin.H{
+			c.AbortWithStatusJSON(401, gin.H{
+				"success":     false,
+				"status_code": 401,
+				"error_type":  "Unauthorized",
+				"message":     "Bearer token is required",
+				"details": gin.H{
 					"expected_format": "Bearer <jwt_token>",
 					"received":        authHeader,
 				},
-			))
+			})
 			return
 		}
 
@@ -69,17 +76,26 @@ func AuthMiddleware(jwtSecret string) gin.HandlerFunc {
 				}
 			}
 			
-			c.AbortWithStatusJSON(401, api.UnauthorizedError(errorMsg, errorDetails))
+			c.AbortWithStatusJSON(401, gin.H{
+				"success":     false,
+				"status_code": 401,
+				"error_type":  "Unauthorized",
+				"message":     errorMsg,
+				"details":     errorDetails,
+			})
 			return
 		}
 
 		if !token.Valid {
-			c.AbortWithStatusJSON(401, api.UnauthorizedError(
-				"Token is invalid or expired",
-				gin.H{
+			c.AbortWithStatusJSON(401, gin.H{
+				"success":     false,
+				"status_code": 401,
+				"error_type":  "Unauthorized",
+				"message":     "Token is invalid or expired",
+				"details": gin.H{
 					"reason": "token_validation_failed",
 				},
-			))
+			})
 			return
 		}
 

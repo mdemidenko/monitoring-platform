@@ -66,6 +66,12 @@ const docTemplate = `{
                         "schema": {
                             "$ref": "#/definitions/api.ErrorResponse"
                         }
+                    },
+                    "500": {
+                        "description": "Ошибка генерации токена",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
                     }
                 }
             }
@@ -409,10 +415,23 @@ const docTemplate = `{
             "description": "Стандартный ответ при возникновении ошибки",
             "type": "object",
             "properties": {
-                "error": {
+                "details": {
+                    "description": "Дополнительная информация об ошибке (опционально)"
+                },
+                "error_type": {
+                    "description": "Тип ошибки",
+                    "type": "string",
+                    "example": "Bad Request"
+                },
+                "message": {
                     "description": "Описание ошибки",
                     "type": "string",
-                    "example": "Invalid request: text is required"
+                    "example": "Invalid request parameters"
+                },
+                "status_code": {
+                    "description": "HTTP статус код",
+                    "type": "integer",
+                    "example": 400
                 },
                 "success": {
                     "description": "Флаг успешного выполнения (всегда false)",
@@ -730,22 +749,40 @@ const docTemplate = `{
     },
     "securityDefinitions": {
         "BearerAuth": {
-            "description": "Введите токен в формате: Bearer {token}",
+            "description": "Введите JWT токен в формате: Bearer {your_jwt_token}",
             "type": "apiKey",
             "name": "Authorization",
             "in": "header"
         }
-    }
+    },
+    "tags": [
+        {
+            "description": "Эндпоинты для аутентификации",
+            "name": "auth"
+        },
+        {
+            "description": "Проверка состояния сервиса",
+            "name": "health"
+        },
+        {
+            "description": "Управление уведомлениями",
+            "name": "notifications"
+        },
+        {
+            "description": "Статус и статистика сервиса",
+            "name": "status"
+        }
+    ]
 }`
 
 // SwaggerInfo holds exported Swagger Info so clients can modify it
 var SwaggerInfo = &swag.Spec{
 	Version:          "1.0",
-	Host:             "127.0.0.1:8080",
-	BasePath:         "/",
+	Host:             "localhost:8080",
+	BasePath:         "/api",
 	Schemes:          []string{},
 	Title:            "Monitoring Platform API",
-	Description:      "API для отправки уведомлений через Telegram",
+	Description:      "API для отправки уведомлений через Telegram с JWT аутентификацией",
 	InfoInstanceName: "swagger",
 	SwaggerTemplate:  docTemplate,
 	LeftDelim:        "{{",
