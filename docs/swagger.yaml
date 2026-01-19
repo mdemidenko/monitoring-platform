@@ -1,4 +1,4 @@
-basePath: /api
+basePath: /
 definitions:
   api.BatchMessage:
     description: Сообщение в составе пакетного запроса
@@ -115,6 +115,43 @@ definitions:
       version:
         description: Версия приложения
         example: 1.0.0
+        type: string
+    type: object
+  api.LoginRequest:
+    description: Запрос для получения JWT токена
+    properties:
+      password:
+        description: Пароль пользователя
+        example: secure_password
+        minLength: 1
+        type: string
+      username:
+        description: Логин пользователя
+        example: admin
+        minLength: 1
+        type: string
+    required:
+    - password
+    - username
+    type: object
+  api.LoginResponse:
+    description: Ответ с JWT токеном при успешной аутентификации
+    properties:
+      expires_at:
+        description: Время истечения токена
+        example: "2024-01-01T12:00:00Z"
+        type: string
+      success:
+        description: Флаг успешного выполнения
+        example: true
+        type: boolean
+      token:
+        description: JWT токен для авторизации
+        example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+        type: string
+      token_type:
+        description: Тип токена
+        example: Bearer
         type: string
     type: object
   api.NotificationItem:
@@ -279,7 +316,7 @@ definitions:
         example: true
         type: boolean
     type: object
-host: localhost:8080
+host: 127.0.0.1:8080
 info:
   contact:
     email: support@swagger.io
@@ -293,6 +330,36 @@ info:
   title: Monitoring Platform API
   version: "1.0"
 paths:
+  /api/auth/login:
+    post:
+      consumes:
+      - application/json
+      description: Получение JWT токена по логину и паролю
+      parameters:
+      - description: Данные для аутентификации
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/api.LoginRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Успешная аутентификация
+          schema:
+            $ref: '#/definitions/api.LoginResponse'
+        "400":
+          description: Некорректные данные запроса
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+        "401":
+          description: Неверные учетные данные
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+      summary: Аутентификация пользователя
+      tags:
+      - auth
   /api/batch:
     post:
       consumes:
@@ -317,6 +384,12 @@ paths:
           description: Некорректные данные запроса
           schema:
             $ref: '#/definitions/api.ErrorResponse'
+        "401":
+          description: Требуется авторизация
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+      security:
+      - BearerAuth: []
       summary: Пакетная отправка уведомлений
       tags:
       - notifications
@@ -353,6 +426,12 @@ paths:
           description: Список уведомлений
           schema:
             $ref: '#/definitions/api.NotificationsResponse'
+        "401":
+          description: Требуется авторизация
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+      security:
+      - BearerAuth: []
       summary: Получение списка всех созданных уведомлений
       tags:
       - notifications
@@ -369,6 +448,12 @@ paths:
           description: Список отправленных уведомлений
           schema:
             $ref: '#/definitions/api.SentNotificationsResponse'
+        "401":
+          description: Требуется авторизация
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+      security:
+      - BearerAuth: []
       summary: Получение списка отправленных уведомлений
       tags:
       - notifications
@@ -396,10 +481,16 @@ paths:
           description: Некорректные данные запроса
           schema:
             $ref: '#/definitions/api.ErrorResponse'
+        "401":
+          description: Требуется авторизация
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
         "500":
           description: Ошибка отправки уведомления
           schema:
             $ref: '#/definitions/api.ErrorResponse'
+      security:
+      - BearerAuth: []
       summary: Отправка одного уведомления
       tags:
       - notifications
@@ -416,11 +507,18 @@ paths:
           description: Статус сервиса
           schema:
             $ref: '#/definitions/api.StatusResponse'
+        "401":
+          description: Требуется авторизация
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+      security:
+      - BearerAuth: []
       summary: Получение статуса и статистики сервиса
       tags:
       - status
 securityDefinitions:
   BearerAuth:
+    description: 'Введите токен в формате: Bearer {token}'
     in: header
     name: Authorization
     type: apiKey

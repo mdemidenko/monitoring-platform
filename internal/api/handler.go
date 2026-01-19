@@ -11,7 +11,7 @@ import (
 	"github.com/mdemidenko/monitoring-platform/internal/notifier"
 	"github.com/mdemidenko/monitoring-platform/internal/repository"
 	
-)
+)	
 
 type Handler struct {
 	telegramService *notifier.TelegramService
@@ -63,9 +63,11 @@ func (h *Handler) HealthHandler(c *gin.Context) {
 // @Tags notifications
 // @Accept json
 // @Produce json
+// @Security BearerAuth
 // @Param request body SendRequest true "Данные для отправки уведомления"
 // @Success 200 {object} SendResponse "Уведомление успешно отправлено"
 // @Failure 400 {object} ErrorResponse "Некорректные данные запроса"
+// @Failure 401 {object} ErrorResponse "Требуется авторизация"
 // @Failure 500 {object} ErrorResponse "Ошибка отправки уведомления"
 // @Router /api/send [post]
 func (h *Handler) SendHandler(c *gin.Context) {
@@ -134,9 +136,11 @@ func (h *Handler) SendHandler(c *gin.Context) {
 // @Tags notifications
 // @Accept json
 // @Produce json
+// @Security BearerAuth
 // @Param request body BatchRequest true "Данные для пакетной отправки"
 // @Success 200 {object} BatchResponse "Пакетная обработка завершена"
 // @Failure 400 {object} ErrorResponse "Некорректные данные запроса"
+// @Failure 401 {object} ErrorResponse "Требуется авторизация"
 // @Router /api/batch [post]
 func (h *Handler) BatchHandler(c *gin.Context) {
 	var req struct {
@@ -199,7 +203,9 @@ func (h *Handler) BatchHandler(c *gin.Context) {
 // @Tags notifications
 // @Accept json
 // @Produce json
+// @Security BearerAuth
 // @Success 200 {object} NotificationsResponse "Список уведомлений"
+// @Failure 401 {object} ErrorResponse "Требуется авторизация"
 // @Router /api/notifications [get]
 func (h *Handler) NotificationsHandler(c *gin.Context) {
 	notifications := h.storage.GetNotifications()
@@ -227,7 +233,9 @@ func (h *Handler) NotificationsHandler(c *gin.Context) {
 // @Tags notifications
 // @Accept json
 // @Produce json
+// @Security BearerAuth
 // @Success 200 {object} SentNotificationsResponse "Список отправленных уведомлений"
+// @Failure 401 {object} ErrorResponse "Требуется авторизация"
 // @Router /api/notifications/sent [get]
 func (h *Handler) SentNotificationsHandler(c *gin.Context) {
 	sentNotifications := h.storage.GetSentNotifications()
@@ -255,7 +263,9 @@ func (h *Handler) SentNotificationsHandler(c *gin.Context) {
 // @Tags status
 // @Accept json
 // @Produce json
+// @Security BearerAuth
 // @Success 200 {object} StatusResponse "Статус сервиса"
+// @Failure 401 {object} ErrorResponse "Требуется авторизация"
 // @Router /api/status [get]
 func (h *Handler) StatusHandler(c *gin.Context) {
 	notifications := h.storage.GetNotifications()
@@ -447,13 +457,4 @@ type StatusResponse struct {
 		// Временная метка
 		Timestamp string `json:"timestamp" example:"2024-01-01T12:00:00Z"`
 	} `json:"data"`
-}
-
-// ErrorResponse представляет ответ об ошибке
-// @Description Стандартный ответ при возникновении ошибки
-type ErrorResponse struct {
-	// Флаг успешного выполнения (всегда false)
-	Success bool `json:"success" example:"false"`
-	// Описание ошибки
-	Error string `json:"error" example:"Invalid request: text is required"`
 }

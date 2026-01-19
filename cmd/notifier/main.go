@@ -28,12 +28,13 @@ import (
 // @license.name Apache 2.0
 // @license.url http://www.apache.org/licenses/LICENSE-2.0.html
 
-// @host localhost:8080
-// @BasePath /api
+// @host 127.0.0.1:8080
+// @BasePath /
 
 // @securityDefinitions.apikey BearerAuth
 // @in header
 // @name Authorization
+// @description Введите токен в формате: Bearer {token}
 
 func main() {
 	// Создаем контекст с возможностью отмены

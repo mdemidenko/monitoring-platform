@@ -24,8 +24,59 @@ const docTemplate = `{
     "host": "{{.Host}}",
     "basePath": "{{.BasePath}}",
     "paths": {
+        "/api/auth/login": {
+            "post": {
+                "description": "Получение JWT токена по логину и паролю",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "auth"
+                ],
+                "summary": "Аутентификация пользователя",
+                "parameters": [
+                    {
+                        "description": "Данные для аутентификации",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/api.LoginRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Успешная аутентификация",
+                        "schema": {
+                            "$ref": "#/definitions/api.LoginResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Некорректные данные запроса",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Неверные учетные данные",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/batch": {
             "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "Отправляет несколько сообщений с возможностью настройки интервалов между отправками и количества параллельных воркеров",
                 "consumes": [
                     "application/json"
@@ -57,6 +108,12 @@ const docTemplate = `{
                     },
                     "400": {
                         "description": "Некорректные данные запроса",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Требуется авторизация",
                         "schema": {
                             "$ref": "#/definitions/api.ErrorResponse"
                         }
@@ -95,6 +152,11 @@ const docTemplate = `{
         },
         "/api/notifications": {
             "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "Возвращает список всех уведомлений, которые были созданы для отправки (включая неотправленные)",
                 "consumes": [
                     "application/json"
@@ -112,12 +174,23 @@ const docTemplate = `{
                         "schema": {
                             "$ref": "#/definitions/api.NotificationsResponse"
                         }
+                    },
+                    "401": {
+                        "description": "Требуется авторизация",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
                     }
                 }
             }
         },
         "/api/notifications/sent": {
             "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "Возвращает список уведомлений, которые были успешно отправлены в Telegram",
                 "consumes": [
                     "application/json"
@@ -135,12 +208,23 @@ const docTemplate = `{
                         "schema": {
                             "$ref": "#/definitions/api.SentNotificationsResponse"
                         }
+                    },
+                    "401": {
+                        "description": "Требуется авторизация",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
                     }
                 }
             }
         },
         "/api/send": {
             "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "Отправляет одно сообщение в указанный чат Telegram. Если chat_id не указан, используется чат из конфигурации",
                 "consumes": [
                     "application/json"
@@ -176,6 +260,12 @@ const docTemplate = `{
                             "$ref": "#/definitions/api.ErrorResponse"
                         }
                     },
+                    "401": {
+                        "description": "Требуется авторизация",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    },
                     "500": {
                         "description": "Ошибка отправки уведомления",
                         "schema": {
@@ -187,6 +277,11 @@ const docTemplate = `{
         },
         "/api/status": {
             "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "Возвращает текущее состояние сервиса, статистику отправленных уведомлений и конфигурационные параметры",
                 "consumes": [
                     "application/json"
@@ -203,6 +298,12 @@ const docTemplate = `{
                         "description": "Статус сервиса",
                         "schema": {
                             "$ref": "#/definitions/api.StatusResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Требуется авторизация",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
                         }
                     }
                 }
@@ -359,6 +460,54 @@ const docTemplate = `{
                     "description": "Версия приложения",
                     "type": "string",
                     "example": "1.0.0"
+                }
+            }
+        },
+        "api.LoginRequest": {
+            "description": "Запрос для получения JWT токена",
+            "type": "object",
+            "required": [
+                "password",
+                "username"
+            ],
+            "properties": {
+                "password": {
+                    "description": "Пароль пользователя",
+                    "type": "string",
+                    "minLength": 1,
+                    "example": "secure_password"
+                },
+                "username": {
+                    "description": "Логин пользователя",
+                    "type": "string",
+                    "minLength": 1,
+                    "example": "admin"
+                }
+            }
+        },
+        "api.LoginResponse": {
+            "description": "Ответ с JWT токеном при успешной аутентификации",
+            "type": "object",
+            "properties": {
+                "expires_at": {
+                    "description": "Время истечения токена",
+                    "type": "string",
+                    "example": "2024-01-01T12:00:00Z"
+                },
+                "success": {
+                    "description": "Флаг успешного выполнения",
+                    "type": "boolean",
+                    "example": true
+                },
+                "token": {
+                    "description": "JWT токен для авторизации",
+                    "type": "string",
+                    "example": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+                },
+                "token_type": {
+                    "description": "Тип токена",
+                    "type": "string",
+                    "example": "Bearer"
                 }
             }
         },
@@ -581,6 +730,7 @@ const docTemplate = `{
     },
     "securityDefinitions": {
         "BearerAuth": {
+            "description": "Введите токен в формате: Bearer {token}",
             "type": "apiKey",
             "name": "Authorization",
             "in": "header"

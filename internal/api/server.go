@@ -12,6 +12,7 @@ import (
 	"github.com/mdemidenko/monitoring-platform/config"
 	"github.com/mdemidenko/monitoring-platform/internal/notifier"
 	"github.com/mdemidenko/monitoring-platform/internal/repository"
+	"github.com/mdemidenko/monitoring-platform/internal/middleware"
 )
 
 type Server struct {
@@ -139,17 +140,23 @@ func (s *Server) setupRoutes() {
 	// Группа API v1
 	api := s.router.Group("/api")
 	{
-		// Health check
-		api.GET("/health", s.handler.HealthHandler)
+		// Public routes (не требуют аутентификации)
+        api.GET("/health", s.handler.HealthHandler)
+        api.POST("/auth/login", s.handler.LoginHandler)
 		
-		// Отправка сообщений
-		api.POST("/send", s.handler.SendHandler)
-		api.POST("/batch", s.handler.BatchHandler)
-		
-		// Получение данных
-		api.GET("/notifications", s.handler.NotificationsHandler)
-		api.GET("/notifications/sent", s.handler.SentNotificationsHandler)
-		api.GET("/status", s.handler.StatusHandler)
+		// Protected routes group (требуют JWT)
+        protected := api.Group("")
+        protected.Use(middleware.AuthMiddleware(s.cfg.Auth.JWTSecret))
+        {
+            // Отправка сообщений
+            protected.POST("/send", s.handler.SendHandler)
+            protected.POST("/batch", s.handler.BatchHandler)
+            
+            // Получение данных
+            protected.GET("/notifications", s.handler.NotificationsHandler)
+            protected.GET("/notifications/sent", s.handler.SentNotificationsHandler)
+            protected.GET("/status", s.handler.StatusHandler)
+        }
 	}
 	
 	// Корневой маршрут
@@ -194,6 +201,7 @@ func (s *Server) Start(port string) {
 	log.Printf("📡 Режим: %s", s.cfg.Server.GinMode)
 	log.Printf("📊 Endpoints:")
 	log.Printf("   GET  %s/api/health", addr)
+	log.Printf("   POST %s/api/auth/login", addr)
 	log.Printf("   POST %s/api/send", addr)
 	log.Printf("   POST %s/api/batch", addr)
 	log.Printf("   GET  %s/api/notifications", addr)
