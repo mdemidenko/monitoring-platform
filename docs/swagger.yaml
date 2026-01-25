@@ -1,0 +1,548 @@
+basePath: /api
+definitions:
+  api.BatchMessage:
+    description: Сообщение в составе пакетного запроса
+    properties:
+      chat_id:
+        description: ID чата Telegram (опционально)
+        example: "123456789"
+        type: string
+      text:
+        description: Текст сообщения для отправки
+        example: Тестовое сообщение 1
+        minLength: 1
+        type: string
+    required:
+    - text
+    type: object
+  api.BatchRequest:
+    description: Запрос на пакетную отправку уведомлений с настройками интервалов
+      и параллелизма
+    properties:
+      interval_ms:
+        description: Интервал между отправками сообщений в миллисекундах (опционально)
+        example: 1000
+        type: integer
+      messages:
+        description: Список сообщений для отправки
+        items:
+          $ref: '#/definitions/api.BatchMessage'
+        minItems: 1
+        type: array
+      workers:
+        description: Количество параллельных воркеров для отправки (опционально, от
+          1 до 10)
+        example: 2
+        type: integer
+    required:
+    - messages
+    type: object
+  api.BatchResponse:
+    description: Ответ при выполнении пакетной отправки уведомлений
+    properties:
+      data:
+        description: Данные о результате обработки
+        properties:
+          error_count:
+            description: Количество сообщений с ошибкой отправки
+            example: 2
+            type: integer
+          interval_ms:
+            description: Использованный интервал между отправками в мс
+            example: 2000
+            type: integer
+          success_count:
+            description: Количество успешно отправленных сообщений
+            example: 8
+            type: integer
+          total:
+            description: Общее количество обработанных сообщений
+            example: 10
+            type: integer
+          workers:
+            description: Количество использованных воркеров
+            example: 2
+            type: integer
+        type: object
+      message:
+        description: Сообщение о результате
+        example: Batch processing completed
+        type: string
+      success:
+        description: Флаг успешного выполнения
+        example: true
+        type: boolean
+    type: object
+  api.ErrorResponse:
+    description: Стандартный ответ при возникновении ошибки
+    properties:
+      details:
+        description: Дополнительная информация об ошибке (опционально)
+      error_type:
+        description: Тип ошибки
+        example: Bad Request
+        type: string
+      message:
+        description: Описание ошибки
+        example: Invalid request parameters
+        type: string
+      status_code:
+        description: HTTP статус код
+        example: 400
+        type: integer
+      success:
+        description: Флаг успешного выполнения (всегда false)
+        example: false
+        type: boolean
+    type: object
+  api.HealthResponse:
+    description: Ответ сервиса на запрос проверки состояния
+    properties:
+      app:
+        description: Название приложения
+        example: monitoring-platform
+        type: string
+      status:
+        description: Статус сервиса
+        example: ok
+        type: string
+      storage:
+        description: Статистика хранилища
+        properties:
+          notifications:
+            description: Количество созданных уведомлений
+            example: 10
+            type: integer
+          sent_notifications:
+            description: Количество отправленных уведомлений
+            example: 8
+            type: integer
+        type: object
+      timestamp:
+        description: Временная метка ответа
+        example: "2024-01-01T12:00:00Z"
+        type: string
+      version:
+        description: Версия приложения
+        example: 1.0.0
+        type: string
+    type: object
+  api.LoginRequest:
+    description: Запрос для получения JWT токена
+    properties:
+      password:
+        description: Пароль пользователя
+        example: secure_password
+        minLength: 1
+        type: string
+      username:
+        description: Логин пользователя
+        example: admin
+        minLength: 1
+        type: string
+    required:
+    - password
+    - username
+    type: object
+  api.LoginResponse:
+    description: Ответ с JWT токеном при успешной аутентификации
+    properties:
+      expires_at:
+        description: Время истечения токена
+        example: "2024-01-01T12:00:00Z"
+        type: string
+      success:
+        description: Флаг успешного выполнения
+        example: true
+        type: boolean
+      token:
+        description: JWT токен для авторизации
+        example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+        type: string
+      token_type:
+        description: Тип токена
+        example: Bearer
+        type: string
+    type: object
+  api.NotificationItem:
+    description: Элемент уведомления в списке
+    properties:
+      chat_id:
+        description: ID чата
+        example: "123456789"
+        type: string
+      text:
+        description: Текст уведомления
+        example: Тестовое сообщение
+        type: string
+    type: object
+  api.NotificationsResponse:
+    description: Ответ со списком всех созданных уведомлений
+    properties:
+      data:
+        description: Данные со списком уведомлений
+        properties:
+          count:
+            description: Общее количество уведомлений
+            example: 5
+            type: integer
+          notifications:
+            description: Список уведомлений
+            items:
+              $ref: '#/definitions/api.NotificationItem'
+            type: array
+        type: object
+      success:
+        description: Флаг успешного выполнения
+        example: true
+        type: boolean
+    type: object
+  api.SendRequest:
+    description: Запрос на отправку одного уведомления
+    properties:
+      chat_id:
+        description: ID чата Telegram (опционально, если не указан - используется
+          из конфигурации)
+        example: "123456789"
+        type: string
+      text:
+        description: Текст сообщения для отправки (обязательное поле)
+        example: Привет, это тестовое сообщение!
+        minLength: 1
+        type: string
+    required:
+    - text
+    type: object
+  api.SendResponse:
+    description: Ответ при успешной отправке уведомления
+    properties:
+      data:
+        description: Данные об отправленном уведомлении
+        properties:
+          chat_id:
+            description: ID чата, куда отправлено сообщение
+            example: "123456789"
+            type: string
+          message_id:
+            description: ID сообщения в Telegram (если отправка успешна)
+            example: 123
+            type: integer
+          text:
+            description: Текст отправленного сообщения
+            example: Тестовое сообщение
+            type: string
+        type: object
+      message:
+        description: Сообщение о результате
+        example: Notification sent successfully
+        type: string
+      success:
+        description: Флаг успешного выполнения
+        example: true
+        type: boolean
+    type: object
+  api.SentNotificationItem:
+    description: Элемент отправленного уведомления в списке
+    properties:
+      chat_id:
+        description: ID чата
+        example: 123456789
+        type: integer
+      message_id:
+        description: ID сообщения в Telegram
+        example: 123
+        type: integer
+    type: object
+  api.SentNotificationsResponse:
+    description: Ответ со списком отправленных уведомлений
+    properties:
+      data:
+        description: Данные со списком отправленных уведомлений
+        properties:
+          count:
+            description: Общее количество отправленных уведомлений
+            example: 3
+            type: integer
+          sent_notifications:
+            description: Список отправленных уведомлений
+            items:
+              $ref: '#/definitions/api.SentNotificationItem'
+            type: array
+        type: object
+      success:
+        description: Флаг успешного выполнения
+        example: true
+        type: boolean
+    type: object
+  api.StatusResponse:
+    description: Ответ с текущим статусом и статистикой сервиса
+    properties:
+      data:
+        description: Данные о статусе сервиса
+        properties:
+          config:
+            description: Конфигурационные параметры
+            properties:
+              app_name:
+                description: Название приложения
+                example: monitoring-platform
+                type: string
+              app_version:
+                description: Версия приложения
+                example: 1.0.0
+                type: string
+              environment:
+                description: Окружение выполнения
+                example: development
+                type: string
+            type: object
+          stats:
+            description: Статистика сервиса
+            properties:
+              pending_notifications:
+                description: Количество ожидающих отправки уведомлений
+                example: 3
+                type: integer
+              total_notifications:
+                description: Всего созданных уведомлений
+                example: 15
+                type: integer
+              total_sent_notifications:
+                description: Всего отправленных уведомлений
+                example: 12
+                type: integer
+            type: object
+          status:
+            description: Текущий статус сервиса
+            example: running
+            type: string
+          timestamp:
+            description: Временная метка
+            example: "2024-01-01T12:00:00Z"
+            type: string
+        type: object
+      success:
+        description: Флаг успешного выполнения
+        example: true
+        type: boolean
+    type: object
+host: localhost:8080
+info:
+  contact:
+    email: support@swagger.io
+    name: API Support
+    url: http://www.swagger.io/support
+  description: API для отправки уведомлений через Telegram с JWT аутентификацией
+  license:
+    name: Apache 2.0
+    url: http://www.apache.org/licenses/LICENSE-2.0.html
+  termsOfService: http://swagger.io/terms/
+  title: Monitoring Platform API
+  version: "1.0"
+paths:
+  /api/auth/login:
+    post:
+      consumes:
+      - application/json
+      description: Получение JWT токена по логину и паролю
+      parameters:
+      - description: Данные для аутентификации
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/api.LoginRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Успешная аутентификация
+          schema:
+            $ref: '#/definitions/api.LoginResponse'
+        "400":
+          description: Некорректные данные запроса
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+        "401":
+          description: Неверные учетные данные
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+        "500":
+          description: Ошибка генерации токена
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+      summary: Аутентификация пользователя
+      tags:
+      - auth
+  /api/batch:
+    post:
+      consumes:
+      - application/json
+      description: Отправляет несколько сообщений с возможностью настройки интервалов
+        между отправками и количества параллельных воркеров
+      parameters:
+      - description: Данные для пакетной отправки
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/api.BatchRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Пакетная обработка завершена
+          schema:
+            $ref: '#/definitions/api.BatchResponse'
+        "400":
+          description: Некорректные данные запроса
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+        "401":
+          description: Требуется авторизация
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Пакетная отправка уведомлений
+      tags:
+      - notifications
+  /api/health:
+    get:
+      consumes:
+      - application/json
+      description: Проверяет доступность сервиса и всех зависимых компонентов (Telegram
+        API, хранилище)
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Сервис работает корректно
+          schema:
+            $ref: '#/definitions/api.HealthResponse'
+        "503":
+          description: Сервис недоступен
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+      summary: Проверка состояния сервиса
+      tags:
+      - health
+  /api/notifications:
+    get:
+      consumes:
+      - application/json
+      description: Возвращает список всех уведомлений, которые были созданы для отправки
+        (включая неотправленные)
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Список уведомлений
+          schema:
+            $ref: '#/definitions/api.NotificationsResponse'
+        "401":
+          description: Требуется авторизация
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Получение списка всех созданных уведомлений
+      tags:
+      - notifications
+  /api/notifications/sent:
+    get:
+      consumes:
+      - application/json
+      description: Возвращает список уведомлений, которые были успешно отправлены
+        в Telegram
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Список отправленных уведомлений
+          schema:
+            $ref: '#/definitions/api.SentNotificationsResponse'
+        "401":
+          description: Требуется авторизация
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Получение списка отправленных уведомлений
+      tags:
+      - notifications
+  /api/send:
+    post:
+      consumes:
+      - application/json
+      description: Отправляет одно сообщение в указанный чат Telegram. Если chat_id
+        не указан, используется чат из конфигурации
+      parameters:
+      - description: Данные для отправки уведомления
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/api.SendRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Уведомление успешно отправлено
+          schema:
+            $ref: '#/definitions/api.SendResponse'
+        "400":
+          description: Некорректные данные запроса
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+        "401":
+          description: Требуется авторизация
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+        "500":
+          description: Ошибка отправки уведомления
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Отправка одного уведомления
+      tags:
+      - notifications
+  /api/status:
+    get:
+      consumes:
+      - application/json
+      description: Возвращает текущее состояние сервиса, статистику отправленных уведомлений
+        и конфигурационные параметры
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Статус сервиса
+          schema:
+            $ref: '#/definitions/api.StatusResponse'
+        "401":
+          description: Требуется авторизация
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Получение статуса и статистики сервиса
+      tags:
+      - status
+securityDefinitions:
+  BearerAuth:
+    description: 'Введите JWT токен в формате: Bearer {your_jwt_token}'
+    in: header
+    name: Authorization
+    type: apiKey
+swagger: "2.0"
+tags:
+- description: Эндпоинты для аутентификации
+  name: auth
+- description: Проверка состояния сервиса
+  name: health
+- description: Управление уведомлениями
+  name: notifications
+- description: Статус и статистика сервиса
+  name: status

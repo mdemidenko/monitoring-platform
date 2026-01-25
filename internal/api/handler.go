@@ -10,7 +10,8 @@ import (
 	"github.com/mdemidenko/monitoring-platform/internal/models"
 	"github.com/mdemidenko/monitoring-platform/internal/notifier"
 	"github.com/mdemidenko/monitoring-platform/internal/repository"
-)
+	
+)	
 
 type Handler struct {
 	telegramService *notifier.TelegramService
@@ -27,12 +28,20 @@ func NewHandler(telegramService *notifier.TelegramService, storage *repository.M
 }
 
 // HealthHandler проверяет здоровье сервиса
+// @Summary Проверка состояния сервиса
+// @Description Проверяет доступность сервиса и всех зависимых компонентов (Telegram API, хранилище)
+// @Tags health
+// @Accept json
+// @Produce json
+// @Success 200 {object} HealthResponse "Сервис работает корректно"
+// @Failure 503 {object} api.ErrorResponse "Сервис недоступен"
+// @Router /api/health [get]
 func (h *Handler) HealthHandler(c *gin.Context) {
 	if err := h.telegramService.HealthCheck(); err != nil {
-		c.JSON(http.StatusServiceUnavailable, gin.H{
-			"success": false,
-			"error":   "Telegram service unavailable: " + err.Error(),
-		})
+		c.JSON(http.StatusServiceUnavailable, ServiceUnavailableError(
+			"Telegram service unavailable", 
+			gin.H{"service_error": err.Error()},
+		))
 		return
 	}
 
@@ -49,6 +58,18 @@ func (h *Handler) HealthHandler(c *gin.Context) {
 }
 
 // SendHandler отправляет одно сообщение
+// @Summary Отправка одного уведомления
+// @Description Отправляет одно сообщение в указанный чат Telegram. Если chat_id не указан, используется чат из конфигурации
+// @Tags notifications
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param request body SendRequest true "Данные для отправки уведомления"
+// @Success 200 {object} SendResponse "Уведомление успешно отправлено"
+// @Failure 400 {object} api.ErrorResponse "Некорректные данные запроса"
+// @Failure 401 {object} api.ErrorResponse "Требуется авторизация"
+// @Failure 500 {object} api.ErrorResponse "Ошибка отправки уведомления"
+// @Router /api/send [post]
 func (h *Handler) SendHandler(c *gin.Context) {
 	var req struct {
 		ChatID string `json:"chat_id" binding:"omitempty"`
@@ -56,10 +77,10 @@ func (h *Handler) SendHandler(c *gin.Context) {
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"success": false,
-			"error":   "Invalid request: " + err.Error(),
-		})
+		c.JSON(http.StatusBadRequest, BadRequestError(
+			"Invalid request data",
+			gin.H{"validation_error": err.Error()},
+		))
 		return
 	}
 
@@ -110,6 +131,17 @@ func (h *Handler) SendHandler(c *gin.Context) {
 }
 
 // BatchHandler отправляет несколько сообщений
+// @Summary Пакетная отправка уведомлений
+// @Description Отправляет несколько сообщений с возможностью настройки интервалов между отправками и количества параллельных воркеров
+// @Tags notifications
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param request body BatchRequest true "Данные для пакетной отправки"
+// @Success 200 {object} BatchResponse "Пакетная обработка завершена"
+// @Failure 400 {object} api.ErrorResponse "Некорректные данные запроса"
+// @Failure 401 {object} api.ErrorResponse "Требуется авторизация"
+// @Router /api/batch [post]
 func (h *Handler) BatchHandler(c *gin.Context) {
 	var req struct {
 		Messages []struct {
@@ -166,6 +198,15 @@ func (h *Handler) BatchHandler(c *gin.Context) {
 }
 
 // NotificationsHandler возвращает список всех уведомлений
+// @Summary Получение списка всех созданных уведомлений
+// @Description Возвращает список всех уведомлений, которые были созданы для отправки (включая неотправленные)
+// @Tags notifications
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} NotificationsResponse "Список уведомлений"
+// @Failure 401 {object} api.ErrorResponse "Требуется авторизация"
+// @Router /api/notifications [get]
 func (h *Handler) NotificationsHandler(c *gin.Context) {
 	notifications := h.storage.GetNotifications()
 	
@@ -187,6 +228,15 @@ func (h *Handler) NotificationsHandler(c *gin.Context) {
 }
 
 // SentNotificationsHandler возвращает список отправленных уведомлений
+// @Summary Получение списка отправленных уведомлений
+// @Description Возвращает список уведомлений, которые были успешно отправлены в Telegram
+// @Tags notifications
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} SentNotificationsResponse "Список отправленных уведомлений"
+// @Failure 401 {object} api.ErrorResponse "Требуется авторизация"
+// @Router /api/notifications/sent [get]
 func (h *Handler) SentNotificationsHandler(c *gin.Context) {
 	sentNotifications := h.storage.GetSentNotifications()
 	
@@ -208,6 +258,15 @@ func (h *Handler) SentNotificationsHandler(c *gin.Context) {
 }
 
 // StatusHandler возвращает статус сервиса
+// @Summary Получение статуса и статистики сервиса
+// @Description Возвращает текущее состояние сервиса, статистику отправленных уведомлений и конфигурационные параметры
+// @Tags status
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} StatusResponse "Статус сервиса"
+// @Failure 401 {object} api.ErrorResponse "Требуется авторизация"
+// @Router /api/status [get]
 func (h *Handler) StatusHandler(c *gin.Context) {
 	notifications := h.storage.GetNotifications()
 	sentNotifications := h.storage.GetSentNotifications()
@@ -229,4 +288,205 @@ func (h *Handler) StatusHandler(c *gin.Context) {
 			"timestamp": time.Now().UTC().Format(time.RFC3339),
 		},
 	})
+}
+
+// Определение структур для документации Swagger
+
+// SendRequest представляет запрос на отправку уведомления
+// @Description Запрос на отправку одного уведомления
+type SendRequest struct {
+	// ID чата Telegram (опционально, если не указан - используется из конфигурации)
+	ChatID string `json:"chat_id" example:"123456789"`
+	// Текст сообщения для отправки (обязательное поле)
+	Text string `json:"text" example:"Привет, это тестовое сообщение!" binding:"required,min=1"`
+}
+
+// BatchMessage представляет сообщение в пакетном запросе
+// @Description Сообщение в составе пакетного запроса
+type BatchMessage struct {
+	// ID чата Telegram (опционально)
+	ChatID string `json:"chat_id" example:"123456789"`
+	// Текст сообщения для отправки
+	Text string `json:"text" example:"Тестовое сообщение 1" binding:"required,min=1"`
+}
+
+// BatchRequest представляет запрос на пакетную отправку уведомлений
+// @Description Запрос на пакетную отправку уведомлений с настройками интервалов и параллелизма
+type BatchRequest struct {
+	// Список сообщений для отправки
+	Messages []BatchMessage `json:"messages" binding:"required,min=1,dive"`
+	// Интервал между отправками сообщений в миллисекундах (опционально)
+	IntervalMs int `json:"interval_ms" example:"1000"`
+	// Количество параллельных воркеров для отправки (опционально, от 1 до 10)
+	Workers int `json:"workers" example:"2"`
+}
+
+// HealthResponse представляет ответ на запрос проверки здоровья
+// @Description Ответ сервиса на запрос проверки состояния
+type HealthResponse struct {
+	// Статус сервиса
+	Status string `json:"status" example:"ok"`
+	// Временная метка ответа
+	Timestamp string `json:"timestamp" example:"2024-01-01T12:00:00Z"`
+	// Название приложения
+	App string `json:"app" example:"monitoring-platform"`
+	// Версия приложения
+	Version string `json:"version" example:"1.0.0"`
+	// Статистика хранилища
+	Storage struct {
+		// Количество созданных уведомлений
+		Notifications int `json:"notifications" example:"10"`
+		// Количество отправленных уведомлений
+		SentNotifications int `json:"sent_notifications" example:"8"`
+	} `json:"storage"`
+}
+
+// SendResponse представляет ответ на успешную отправку уведомления
+// @Description Ответ при успешной отправке уведомления
+type SendResponse struct {
+	// Флаг успешного выполнения
+	Success bool `json:"success" example:"true"`
+	// Сообщение о результате
+	Message string `json:"message" example:"Notification sent successfully"`
+	// Данные об отправленном уведомлении
+	Data struct {
+		// ID чата, куда отправлено сообщение
+		ChatID string `json:"chat_id" example:"123456789"`
+		// Текст отправленного сообщения
+		Text string `json:"text" example:"Тестовое сообщение"`
+		// ID сообщения в Telegram (если отправка успешна)
+		MessageID int64 `json:"message_id" example:"123"`
+	} `json:"data"`
+}
+
+// BatchResponse представляет ответ на пакетную отправку уведомлений
+// @Description Ответ при выполнении пакетной отправки уведомлений
+type BatchResponse struct {
+	// Флаг успешного выполнения
+	Success bool `json:"success" example:"true"`
+	// Сообщение о результате
+	Message string `json:"message" example:"Batch processing completed"`
+	// Данные о результате обработки
+	Data struct {
+		// Общее количество обработанных сообщений
+		Total int `json:"total" example:"10"`
+		// Количество успешно отправленных сообщений
+		SuccessCount int `json:"success_count" example:"8"`
+		// Количество сообщений с ошибкой отправки
+		ErrorCount int `json:"error_count" example:"2"`
+		// Использованный интервал между отправками в мс
+		IntervalMs int64 `json:"interval_ms" example:"2000"`
+		// Количество использованных воркеров
+		Workers int `json:"workers" example:"2"`
+	} `json:"data"`
+}
+
+// NotificationItem представляет элемент списка уведомлений
+// @Description Элемент уведомления в списке
+type NotificationItem struct {
+	// ID чата
+	ChatID string `json:"chat_id" example:"123456789"`
+	// Текст уведомления
+	Text string `json:"text" example:"Тестовое сообщение"`
+}
+
+// NotificationsResponse представляет ответ со списком уведомлений
+// @Description Ответ со списком всех созданных уведомлений
+type NotificationsResponse struct {
+	// Флаг успешного выполнения
+	Success bool `json:"success" example:"true"`
+	// Данные со списком уведомлений
+	Data struct {
+		// Общее количество уведомлений
+		Count int `json:"count" example:"5"`
+		// Список уведомлений
+		Notifications []NotificationItem `json:"notifications"`
+	} `json:"data"`
+}
+
+// SentNotificationItem представляет элемент списка отправленных уведомлений
+// @Description Элемент отправленного уведомления в списке
+type SentNotificationItem struct {
+	// ID сообщения в Telegram
+	MessageID int64 `json:"message_id" example:"123"`
+	// ID чата
+	ChatID int64 `json:"chat_id" example:"123456789"`
+}
+
+// SentNotificationsResponse представляет ответ со списком отправленных уведомлений
+// @Description Ответ со списком отправленных уведомлений
+type SentNotificationsResponse struct {
+	// Флаг успешного выполнения
+	Success bool `json:"success" example:"true"`
+	// Данные со списком отправленных уведомлений
+	Data struct {
+		// Общее количество отправленных уведомлений
+		Count int `json:"count" example:"3"`
+		// Список отправленных уведомлений
+		SentNotifications []SentNotificationItem `json:"sent_notifications"`
+	} `json:"data"`
+}
+
+// StatusResponse представляет ответ со статусом сервиса
+// @Description Ответ с текущим статусом и статистикой сервиса
+type StatusResponse struct {
+	// Флаг успешного выполнения
+	Success bool `json:"success" example:"true"`
+	// Данные о статусе сервиса
+	Data struct {
+		// Текущий статус сервиса
+		Status string `json:"status" example:"running"`
+		// Статистика сервиса
+		Stats struct {
+			// Всего созданных уведомлений
+			TotalNotifications int `json:"total_notifications" example:"15"`
+			// Всего отправленных уведомлений
+			TotalSentNotifications int `json:"total_sent_notifications" example:"12"`
+			// Количество ожидающих отправки уведомлений
+			PendingNotifications int `json:"pending_notifications" example:"3"`
+		} `json:"stats"`
+		// Конфигурационные параметры
+		Config struct {
+			// Название приложения
+			AppName string `json:"app_name" example:"monitoring-platform"`
+			// Версия приложения
+			AppVersion string `json:"app_version" example:"1.0.0"`
+			// Окружение выполнения
+			Environment string `json:"environment" example:"development"`
+		} `json:"config"`
+		// Временная метка
+		Timestamp string `json:"timestamp" example:"2024-01-01T12:00:00Z"`
+	} `json:"data"`
+}
+
+// LoginRequest запрос на аутентификацию
+// @Description Запрос для получения JWT токена
+type LoginRequest struct {
+	// Логин пользователя
+	Username string `json:"username" binding:"required,min=1" example:"admin"`
+	// Пароль пользователя
+	Password string `json:"password" binding:"required,min=1" example:"secure_password"`
+}
+
+// LoginResponse ответ с JWT токеном
+// @Description Ответ с JWT токеном при успешной аутентификации
+type LoginResponse struct {
+	// Флаг успешного выполнения
+	Success bool `json:"success" example:"true"`
+	// JWT токен для авторизации
+	Token string `json:"token" example:"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."`
+	// Время истечения токена
+	ExpiresAt time.Time `json:"expires_at" example:"2024-01-01T12:00:00Z"`
+	// Тип токена
+	TokenType string `json:"token_type" example:"Bearer"`
+}
+
+// AuthError пример ошибки авторизации для Swagger
+// @Description Пример ошибки при неудачной авторизации
+type AuthError struct {
+	Success    bool        `json:"success" example:"false"`
+	StatusCode int         `json:"status_code" example:"401"`
+	ErrorType  string      `json:"error_type" example:"Unauthorized"`
+	Message    string      `json:"message" example:"Invalid username or password"`
+	Details    interface{} `json:"details,omitempty"`
 }

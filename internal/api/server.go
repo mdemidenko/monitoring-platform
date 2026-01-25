@@ -8,8 +8,11 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/mdemidenko/monitoring-platform/config"
+	"github.com/mdemidenko/monitoring-platform/internal/middleware"
 	"github.com/mdemidenko/monitoring-platform/internal/notifier"
 	"github.com/mdemidenko/monitoring-platform/internal/repository"
+	swaggerFiles "github.com/swaggo/files"
+	ginSwagger "github.com/swaggo/gin-swagger"
 )
 
 type Server struct {
@@ -128,20 +131,32 @@ func corsMiddleware() gin.HandlerFunc {
 
 // setupRoutes настраивает маршруты API
 func (s *Server) setupRoutes() {
+	// Swagger UI документация
+	s.router.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler, 
+		ginSwagger.URL("/swagger/doc.json"),
+		ginSwagger.DefaultModelsExpandDepth(-1),
+	))
+	
 	// Группа API v1
 	api := s.router.Group("/api")
 	{
-		// Health check
-		api.GET("/health", s.handler.HealthHandler)
+		// Public routes (не требуют аутентификации)
+        api.GET("/health", s.handler.HealthHandler)
+        api.POST("/auth/login", s.handler.LoginHandler)
 		
-		// Отправка сообщений
-		api.POST("/send", s.handler.SendHandler)
-		api.POST("/batch", s.handler.BatchHandler)
-		
-		// Получение данных
-		api.GET("/notifications", s.handler.NotificationsHandler)
-		api.GET("/notifications/sent", s.handler.SentNotificationsHandler)
-		api.GET("/status", s.handler.StatusHandler)
+		// Protected routes group (требуют JWT)
+        protected := api.Group("")
+        protected.Use(middleware.AuthMiddleware(s.cfg.Auth.JWTSecret))
+        {
+            // Отправка сообщений
+            protected.POST("/send", s.handler.SendHandler)
+            protected.POST("/batch", s.handler.BatchHandler)
+            
+            // Получение данных
+            protected.GET("/notifications", s.handler.NotificationsHandler)
+            protected.GET("/notifications/sent", s.handler.SentNotificationsHandler)
+            protected.GET("/status", s.handler.StatusHandler)
+        }
 	}
 	
 	// Корневой маршрут
@@ -150,7 +165,8 @@ func (s *Server) setupRoutes() {
 			"service": "Telegram Notification Service",
 			"version": s.cfg.App.Version,
 			"status":  "running",
-			"docs":    "/api/health",
+			"docs":    "/swagger/index.html",
+			"api":     "/api/health",
 		})
 	})
 	
@@ -160,6 +176,7 @@ func (s *Server) setupRoutes() {
 			"error":   "Not found",
 			"message": "The requested route does not exist",
 			"path":    c.Request.URL.Path,
+			"docs":    "/swagger/index.html",
 		})
 	})
 }
@@ -184,10 +201,13 @@ func (s *Server) Start(port string) {
 	log.Printf("📡 Режим: %s", s.cfg.Server.GinMode)
 	log.Printf("📊 Endpoints:")
 	log.Printf("   GET  %s/api/health", addr)
+	log.Printf("   POST %s/api/auth/login", addr)
 	log.Printf("   POST %s/api/send", addr)
 	log.Printf("   POST %s/api/batch", addr)
 	log.Printf("   GET  %s/api/notifications", addr)
+	log.Printf("   GET  %s/api/notifications/sent", addr)
 	log.Printf("   GET  %s/api/status", addr)
+	log.Printf("📚 Swagger UI: %s/swagger/index.html", addr)
 	
 	if err := s.httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		log.Fatalf("❌ Ошибка сервера: %v", err)
