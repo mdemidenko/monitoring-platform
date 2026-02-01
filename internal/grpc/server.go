@@ -1,4 +1,4 @@
-package grpc // Здесь пакет называется "grpc"
+package grpc
 
 import (
 	"context"
@@ -10,7 +10,7 @@ import (
 	"github.com/mdemidenko/monitoring-platform/config"
 	"github.com/mdemidenko/monitoring-platform/internal/notifier"
 	"github.com/mdemidenko/monitoring-platform/internal/repository"
-	grpcGenerated "github.com/mdemidenko/monitoring-platform/pkg/grpc" // Алиас для сгенерированного кода
+	grpcGenerated "github.com/mdemidenko/monitoring-platform/pkg/grpc"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/keepalive"
 	"google.golang.org/grpc/reflection"
@@ -18,13 +18,13 @@ import (
 
 // GRPCServer представляет gRPC сервер
 type GRPCServer struct {
-	server   *grpc.Server // стандартный grpc.Server
+	server   *grpc.Server
 	listener net.Listener
 	service  *MonitoringService
 	cfg      *config.Config
 }
 
-// NewGRPCServer создает новый gRPC сервер (экспортируемая функция!)
+// NewGRPCServer создает новый gRPC сервер
 func NewGRPCServer(
 	cfg *config.Config,
 	telegramService *notifier.TelegramService,
@@ -65,7 +65,7 @@ func NewGRPCServer(
 	gRPCServer := grpc.NewServer(serverOpts...)
 	
 	// Регистрируем сервис
-	grpcGenerated.RegisterMonitoringServiceServer(gRPCServer, monitoringService) // Используем алиас
+	grpcGenerated.RegisterMonitoringServiceServer(gRPCServer, monitoringService)
 	
 	// Включаем reflection для тестирования (можно отключить в production)
 	if cfg.IsDevelopment() {

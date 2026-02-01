@@ -95,8 +95,6 @@ func (s *MonitoringService) CreateNotification(ctx context.Context, req *grpc.No
 
 // GetNotification получает уведомление по chat_id
 func (s *MonitoringService) GetNotification(ctx context.Context, req *grpc.GetNotificationRequest) (*grpc.Notification, error) {
-	// В текущей реализации нет метода для получения по chat_id
-	// Возвращаем заглушку или реализуем поиск
 	notifications := s.storage.GetNotifications()
 	
 	// Ищем уведомление по chat_id
@@ -202,8 +200,6 @@ func (s *MonitoringService) CreateService(ctx context.Context, req *grpc.Service
 		BusinessLine:   req.BusinessLine,
 	}
 	
-	// В текущей реализации нет хранилища для Service
-	// Это заглушка для будущей реализации
 	log.Printf("Service created (stub): %+v", service)
 	
 	return &grpc.ServiceResponse{
@@ -215,7 +211,6 @@ func (s *MonitoringService) CreateService(ctx context.Context, req *grpc.Service
 
 // GetService получает сервис по ID
 func (s *MonitoringService) GetService(ctx context.Context, req *grpc.GetServiceRequest) (*grpc.Service, error) {
-	// Заглушка для будущей реализации
 	return &grpc.Service{
 		Id:             req.Id,
 		Name:           "Example Service",
@@ -227,7 +222,6 @@ func (s *MonitoringService) GetService(ctx context.Context, req *grpc.GetService
 
 // ListServices возвращает список сервисов
 func (s *MonitoringService) ListServices(ctx context.Context, _ *emptypb.Empty) (*grpc.ServiceList, error) {
-	// Заглушка для будущей реализации
 	return &grpc.ServiceList{
 		Services: []*grpc.Service{
 			{
@@ -253,8 +247,6 @@ func (s *MonitoringService) CreateResult(ctx context.Context, req *grpc.Result) 
 		Tenant: req.Tenant,
 	}
 	
-	// В текущей реализации нет хранилища для Result
-	// Это заглушка для будущей реализации
 	log.Printf("Result created (stub): %+v", result)
 	
 	return &grpc.ResultResponse{
@@ -266,7 +258,6 @@ func (s *MonitoringService) CreateResult(ctx context.Context, req *grpc.Result) 
 
 // GetResult получает результат по ID
 func (s *MonitoringService) GetResult(ctx context.Context, req *grpc.GetResultRequest) (*grpc.Result, error) {
-	// Заглушка для будущей реализации
 	return &grpc.Result{
 		Id:     req.Id,
 		Name:   "Example Result",
@@ -276,7 +267,6 @@ func (s *MonitoringService) GetResult(ctx context.Context, req *grpc.GetResultRe
 
 // ListResults возвращает список результатов
 func (s *MonitoringService) ListResults(ctx context.Context, _ *emptypb.Empty) (*grpc.ResultList, error) {
-	// Заглушка для будущей реализации
 	return &grpc.ResultList{
 		Results: []*grpc.Result{
 			{

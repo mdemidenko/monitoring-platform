@@ -31,13 +31,9 @@ func main() {
 		log.Fatalf("❌ Не удалось загрузить конфигурацию: %v", err)
 	}
 
-	// Создаем соединение с сервером
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	
-	conn, err := grpc.DialContext(ctx, serverAddr,
+	conn, err := grpc.NewClient(serverAddr,
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
-		grpc.WithBlock(),
+		// grpc.WithBlock(), // Убираем deprecated опцию
 	)
 	if err != nil {
 		log.Fatalf("❌ Не удалось подключиться к серверу: %v", err)
