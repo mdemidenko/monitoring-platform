@@ -25,6 +25,7 @@ type ServerConfig struct {
 	GinMode        string   `yaml:"gin_mode" json:"gin_mode"`
 	EnableCORS     bool     `yaml:"enable_cors" json:"enable_cors"`
 	TrustedProxies []string `yaml:"trusted_proxies" json:"trusted_proxies"`
+	GRPCPort       string   `yaml:"grpc_port" json:"grpc_port"`
 }
 
 
@@ -153,6 +154,7 @@ func DefaultConfig() *Config {
 			GinMode:        "debug",
 			EnableCORS:     true,
 			TrustedProxies: []string{"127.0.0.1"},
+			GRPCPort:       "9090",
 		},
 		Auth: AuthConfig{
             JWTSecret:      "your-default-secret-key-change-this",
