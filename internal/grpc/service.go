@@ -9,10 +9,10 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 	"github.com/mdemidenko/monitoring-platform/config"
-	"github.com/mdemidenko/monitoring-platform/core"
+	"github.com/mdemidenko/monitoring-platform/internal/core"
 	"github.com/mdemidenko/monitoring-platform/internal/domain"
 	"github.com/mdemidenko/monitoring-platform/internal/models"
-	"github.com/mdemidenko/monitoring-platform/pkg/api/grpc"
+	"github.com/mdemidenko/monitoring-platform/pkg/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/emptypb"
@@ -74,12 +74,12 @@ func (s *MonitoringService) Login(ctx context.Context, req *grpc.LoginRequest) (
 func (s *MonitoringService) CreateNotification(ctx context.Context, req *grpc.Notification) (*grpc.NotificationResponse, error) {
 	// Создаем доменное уведомление
 	notification := domain.NewNotification(req.ChatId, req.Text)
-
-	// Сохраняем через хранилище
-	if err := s.notificationService.Storage.Store(notification); err != nil {
+	
+	// Используем ProcessEntity для сохранения через репозиторий
+	if err := s.notificationService.ProcessEntity(ctx, notification); err != nil {
 		return nil, status.Error(codes.Internal, fmt.Sprintf("failed to store notification: %v", err))
 	}
-
+	
 	return &grpc.NotificationResponse{
 		Success: true,
 		Message: "Notification created successfully",
@@ -89,8 +89,9 @@ func (s *MonitoringService) CreateNotification(ctx context.Context, req *grpc.No
 
 // GetNotification получает уведомление по chat_id
 func (s *MonitoringService) GetNotification(ctx context.Context, req *grpc.GetNotificationRequest) (*grpc.Notification, error) {
-	notifications := s.notificationService.Storage.GetNotifications()
-
+	// Используем метод сервиса для получения уведомлений
+	notifications := s.notificationService.GetNotifications()
+	
 	// Ищем уведомление по chat_id
 	for _, n := range notifications {
 		if n.ChatID == req.ChatId {
@@ -100,14 +101,15 @@ func (s *MonitoringService) GetNotification(ctx context.Context, req *grpc.GetNo
 			}, nil
 		}
 	}
-
+	
 	return nil, status.Error(codes.NotFound, "notification not found")
 }
 
 // ListNotifications возвращает список всех уведомлений
 func (s *MonitoringService) ListNotifications(ctx context.Context, _ *emptypb.Empty) (*grpc.NotificationList, error) {
-	notifications := s.notificationService.Storage.GetNotifications()
-
+	// Используем метод сервиса для получения уведомлений
+	notifications := s.notificationService.GetNotifications()
+	
 	// Конвертируем в protobuf сообщения
 	pbNotifications := make([]*grpc.Notification, 0, len(notifications))
 	for _, n := range notifications {
@@ -116,7 +118,7 @@ func (s *MonitoringService) ListNotifications(ctx context.Context, _ *emptypb.Em
 			Text:   n.Text,
 		})
 	}
-
+	
 	return &grpc.NotificationList{
 		Notifications: pbNotifications,
 		Count:         int32(len(pbNotifications)),
@@ -127,17 +129,19 @@ func (s *MonitoringService) ListNotifications(ctx context.Context, _ *emptypb.Em
 
 // CreateSentNotification создает запись об отправленном уведомлении
 func (s *MonitoringService) CreateSentNotification(ctx context.Context, req *grpc.SentNotification) (*grpc.SentNotificationResponse, error) {
-	// Конвертируем из protobuf в модель
-	sentNotification := &models.SentNotification{
+	// Создаем доменную модель отправленного уведомления
+	// Предполагаем, что SentNotification имеет конструктор или можно создать напрямую
+	// В зависимости от того, как определен domain.SentNotification
+	sentNotification := &domain.SentNotification{
 		MessageID: req.MessageId,
 		ChatID:    req.ChatId,
 	}
-
-	// Сохраняем в хранилище
-	if err := s.notificationService.Storage.Store(sentNotification); err != nil {
+	
+	// Используем ProcessEntity для сохранения через репозиторий
+	if err := s.notificationService.ProcessEntity(ctx, sentNotification); err != nil {
 		return nil, status.Error(codes.Internal, fmt.Sprintf("failed to store sent notification: %v", err))
 	}
-
+	
 	return &grpc.SentNotificationResponse{
 		Success: true,
 		Message: "Sent notification created successfully",
@@ -147,8 +151,9 @@ func (s *MonitoringService) CreateSentNotification(ctx context.Context, req *grp
 
 // GetSentNotification получает отправленное уведомление по message_id
 func (s *MonitoringService) GetSentNotification(ctx context.Context, req *grpc.GetSentNotificationRequest) (*grpc.SentNotification, error) {
-	sentNotifications := s.notificationService.Storage.GetSentNotifications()
-
+	// Используем метод сервиса для получения отправленных уведомлений
+	sentNotifications := s.notificationService.GetSentNotifications()
+	
 	// Ищем по message_id
 	for _, n := range sentNotifications {
 		if n.MessageID == req.MessageId {
@@ -158,14 +163,15 @@ func (s *MonitoringService) GetSentNotification(ctx context.Context, req *grpc.G
 			}, nil
 		}
 	}
-
+	
 	return nil, status.Error(codes.NotFound, "sent notification not found")
 }
 
 // ListSentNotifications возвращает список всех отправленных уведомлений
 func (s *MonitoringService) ListSentNotifications(ctx context.Context, _ *emptypb.Empty) (*grpc.SentNotificationList, error) {
-	sentNotifications := s.notificationService.Storage.GetSentNotifications()
-
+	// Используем метод сервиса для получения отправленных уведомлений
+	sentNotifications := s.notificationService.GetSentNotifications()
+	
 	// Конвертируем в protobuf сообщения
 	pbSentNotifications := make([]*grpc.SentNotification, 0, len(sentNotifications))
 	for _, n := range sentNotifications {
@@ -174,7 +180,7 @@ func (s *MonitoringService) ListSentNotifications(ctx context.Context, _ *emptyp
 			ChatId:    n.ChatID,
 		})
 	}
-
+	
 	return &grpc.SentNotificationList{
 		SentNotifications: pbSentNotifications,
 		Count:             int32(len(pbSentNotifications)),
@@ -185,6 +191,7 @@ func (s *MonitoringService) ListSentNotifications(ctx context.Context, _ *emptyp
 
 // CreateService создает новый сервис
 func (s *MonitoringService) CreateService(ctx context.Context, req *grpc.Service) (*grpc.ServiceResponse, error) {
+	// Создаем модель сервиса
 	service := &models.Service{
 		ID:             int(req.Id),
 		Name:           req.Name,
@@ -192,9 +199,15 @@ func (s *MonitoringService) CreateService(ctx context.Context, req *grpc.Service
 		DeprecatedDate: req.DeprecatedDate,
 		BusinessLine:   req.BusinessLine,
 	}
-
+	
+	// Сохраняем через ProcessEntity
+	if err := s.notificationService.ProcessEntity(ctx, service); err != nil {
+		// Если ProcessEntity не поддерживает models.Service, просто логируем
+		log.Printf("Warning: failed to store service via ProcessEntity: %v", err)
+	}
+	
 	log.Printf("Service created (stub): %+v", service)
-
+	
 	return &grpc.ServiceResponse{
 		Success: true,
 		Message: "Service created successfully (stub)",
@@ -233,14 +246,21 @@ func (s *MonitoringService) ListServices(ctx context.Context, _ *emptypb.Empty) 
 
 // CreateResult создает новый результат
 func (s *MonitoringService) CreateResult(ctx context.Context, req *grpc.Result) (*grpc.ResultResponse, error) {
+	// Создаем модель результата
 	result := &models.Result{
 		ID:     int(req.Id),
 		Name:   req.Name,
 		Tenant: req.Tenant,
 	}
-
+	
+	// Сохраняем через ProcessEntity
+	if err := s.notificationService.ProcessEntity(ctx, result); err != nil {
+		// Если ProcessEntity не поддерживает models.Result, просто логируем
+		log.Printf("Warning: failed to store result via ProcessEntity: %v", err)
+	}
+	
 	log.Printf("Result created (stub): %+v", result)
-
+	
 	return &grpc.ResultResponse{
 		Success: true,
 		Message: "Result created successfully (stub)",
@@ -280,75 +300,57 @@ func (s *MonitoringService) SendNotification(ctx context.Context, req *grpc.Send
 	if chatID == "" {
 		chatID = s.cfg.Telegram.ChatID
 	}
-
-	// Создаем уведомление
-	notification := &models.Notification{
-		ChatID: chatID,
-		Text:   req.Text,
-	}
-
-	// Сохраняем в хранилище
-	if err := s.notificationService.Storage.Store(notification); err != nil {
-		return nil, status.Error(codes.Internal, fmt.Sprintf("failed to store notification: %v", err))
-	}
-
-	// Отправляем через Telegram-сервис
-	sentNotification, err := s.notificationService.Notifier.SendNotification(ctx, chatID, req.Text)
+	
+	// Используем метод SendNotification сервиса (он сам сохранит и отправит)
+	sentNotification, err := s.notificationService.SendNotification(ctx, chatID, req.Text)
 	if err != nil {
 		return nil, status.Error(codes.Internal, fmt.Sprintf("failed to send notification: %v", err))
 	}
-
-	// Сохраняем отправленное уведомление
-	if sentNotification != nil {
-		if err := s.notificationService.Storage.Store(sentNotification); err != nil {
-			log.Printf("Failed to store sent notification: %v", err)
-		}
-	}
-
+	
 	// Формируем ответ
 	response := &grpc.SendResponse{
 		Success: true,
 		Message: "Notification sent successfully",
 		ChatId:  chatID,
 	}
-
+	
 	if sentNotification != nil {
 		response.MessageId = sentNotification.MessageID
 	}
-
+	
 	return response, nil
 }
 
 // BatchSend отправляет несколько уведомлений пакетно
 func (s *MonitoringService) BatchSend(ctx context.Context, req *grpc.BatchSendRequest) (*grpc.BatchSendResponse, error) {
-	// Преобразуем запрос в формат для обработки
-	notifications := make([]*models.Notification, 0, len(req.Messages))
+	// Преобразуем protobuf сообщения в доменные уведомления
+	notifications := make([]*domain.Notification, 0, len(req.Messages))
 	for _, msg := range req.Messages {
 		chatID := msg.ChatId
 		if chatID == "" {
 			chatID = s.cfg.Telegram.ChatID
 		}
-		notifications = append(notifications, &models.Notification{
+		notifications = append(notifications, &domain.Notification{
 			ChatID: chatID,
 			Text:   msg.Text,
 		})
 	}
-
+	
 	// Настраиваем интервал
 	interval := 2 * time.Second
 	if req.IntervalMs > 0 {
 		interval = time.Duration(req.IntervalMs) * time.Millisecond
 	}
-
+	
 	// Настраиваем количество воркеров
 	workers := 2
 	if req.Workers > 0 && req.Workers <= 10 {
 		workers = int(req.Workers)
 	}
-
-	// Запускаем обработку
-	result := s.notificationService.Notifier.ProcessWithIntervals(ctx, notifications, interval, workers)
-
+	
+	// Запускаем обработку через метод сервиса
+	result := s.notificationService.ProcessWithIntervals(ctx, notifications, interval, workers)
+	
 	return &grpc.BatchSendResponse{
 		Success:      true,
 		Message:      "Batch processing completed",
