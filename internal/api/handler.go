@@ -1,29 +1,24 @@
 package api
 
 import (
-	"log"
 	"net/http"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/mdemidenko/monitoring-platform/config"
-	"github.com/mdemidenko/monitoring-platform/internal/models"
-	"github.com/mdemidenko/monitoring-platform/internal/notifier"
-	"github.com/mdemidenko/monitoring-platform/internal/repository"
-	
-)	
+	"github.com/mdemidenko/monitoring-platform/internal/core"
+	"github.com/mdemidenko/monitoring-platform/internal/domain"
+)
 
 type Handler struct {
-	telegramService *notifier.TelegramService
-	storage         *repository.MemoryStorage
-	cfg             *config.Config
+	notificationService *core.NotificationService
+	cfg                 *config.Config
 }
 
-func NewHandler(telegramService *notifier.TelegramService, storage *repository.MemoryStorage, cfg *config.Config) *Handler {
+func NewHandler(notificationService *core.NotificationService, cfg *config.Config) *Handler {
 	return &Handler{
-		telegramService: telegramService,
-		storage:         storage,
-		cfg:             cfg,
+		notificationService: notificationService,
+		cfg:                 cfg,
 	}
 }
 
@@ -37,13 +32,16 @@ func NewHandler(telegramService *notifier.TelegramService, storage *repository.M
 // @Failure 503 {object} api.ErrorResponse "Сервис недоступен"
 // @Router /api/health [get]
 func (h *Handler) HealthHandler(c *gin.Context) {
-	if err := h.telegramService.HealthCheck(); err != nil {
+	if err := h.notificationService.HealthCheck(); err != nil {
 		c.JSON(http.StatusServiceUnavailable, ServiceUnavailableError(
-			"Telegram service unavailable", 
+			"Notification service unavailable",
 			gin.H{"service_error": err.Error()},
 		))
 		return
 	}
+
+	// Получаем статистику через сервис
+	stats := h.notificationService.GetStats()
 
 	c.JSON(http.StatusOK, gin.H{
 		"status":    "ok",
@@ -51,8 +49,8 @@ func (h *Handler) HealthHandler(c *gin.Context) {
 		"app":       h.cfg.App.Name,
 		"version":   h.cfg.App.Version,
 		"storage": gin.H{
-			"notifications":      len(h.storage.GetNotifications()),
-			"sent_notifications": len(h.storage.GetSentNotifications()),
+			"notifications":      stats.TotalNotifications,
+			"sent_notifications": stats.TotalSentNotifications,
 		},
 	})
 }
@@ -90,33 +88,28 @@ func (h *Handler) SendHandler(c *gin.Context) {
 		chatID = h.cfg.Telegram.ChatID
 	}
 
-	// Создаем уведомление
-	notification := models.NewNotification(chatID, req.Text)
-
-	// Сохраняем в хранилище
-	if err := h.storage.Store(notification); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"success": false,
-			"error":   "Failed to store notification: " + err.Error(),
-		})
-		return
-	}
-
-	// Отправляем через сервис
-	sentNotification, err := h.telegramService.SendNotification(c.Request.Context(), req.Text)
+	// Используем сервис из ядра
+	sentNotification, err := h.notificationService.SendNotification(c.Request.Context(), chatID, req.Text)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"success": false,
-			"error":   "Failed to send notification: " + err.Error(),
+		// Определяем тип ошибки для соответствующего HTTP статуса
+		statusCode := http.StatusInternalServerError
+		errorType := "Internal Server Error"
+
+		if core.IsValidationError(err) {
+			statusCode = http.StatusBadRequest
+			errorType = "Bad Request"
+		} else if core.IsExternalServiceError(err) {
+			statusCode = http.StatusBadGateway
+			errorType = "Bad Gateway"
+		}
+
+		c.JSON(statusCode, gin.H{
+			"success":     false,
+			"status_code": statusCode,
+			"error_type":  errorType,
+			"error":       err.Error(),
 		})
 		return
-	}
-
-	// Сохраняем отправленное уведомление
-	if sentNotification != nil {
-		if err := h.storage.Store(sentNotification); err != nil {
-			log.Printf("Failed to store sent notification: %v", err)
-		}
 	}
 
 	c.JSON(http.StatusOK, gin.H{
@@ -161,13 +154,13 @@ func (h *Handler) BatchHandler(c *gin.Context) {
 	}
 
 	// Подготавливаем нотификации
-	notifications := make([]*models.Notification, 0, len(req.Messages))
+	notifications := make([]*domain.Notification, 0, len(req.Messages))
 	for _, msg := range req.Messages {
 		chatID := msg.ChatID
 		if chatID == "" {
 			chatID = h.cfg.Telegram.ChatID
 		}
-		notifications = append(notifications, models.NewNotification(chatID, msg.Text))
+		notifications = append(notifications, domain.NewNotification(chatID, msg.Text))
 	}
 
 	// Настраиваем параметры обработки
@@ -181,12 +174,12 @@ func (h *Handler) BatchHandler(c *gin.Context) {
 		workers = req.Workers
 	}
 
-	// Запускаем обработку
-	result := h.telegramService.ProcessWithIntervals(c.Request.Context(), notifications, interval, workers)
+	// Запускаем обработку через сервис ядра
+	result := h.notificationService.ProcessWithIntervals(c.Request.Context(), notifications, interval, workers)
 
 	c.JSON(http.StatusOK, gin.H{
-		"success":       true,
-		"message":       "Batch processing completed",
+		"success": true,
+		"message": "Batch processing completed",
 		"data": gin.H{
 			"total":         len(notifications),
 			"success_count": result.SuccessCount,
@@ -208,7 +201,8 @@ func (h *Handler) BatchHandler(c *gin.Context) {
 // @Failure 401 {object} api.ErrorResponse "Требуется авторизация"
 // @Router /api/notifications [get]
 func (h *Handler) NotificationsHandler(c *gin.Context) {
-	notifications := h.storage.GetNotifications()
+	// Используем сервис для получения уведомлений
+	notifications := h.notificationService.GetNotifications()
 	
 	response := make([]gin.H, 0, len(notifications))
 	for _, n := range notifications {
@@ -238,7 +232,8 @@ func (h *Handler) NotificationsHandler(c *gin.Context) {
 // @Failure 401 {object} api.ErrorResponse "Требуется авторизация"
 // @Router /api/notifications/sent [get]
 func (h *Handler) SentNotificationsHandler(c *gin.Context) {
-	sentNotifications := h.storage.GetSentNotifications()
+	// Используем сервис для получения отправленных уведомлений
+	sentNotifications := h.notificationService.GetSentNotifications()
 	
 	response := make([]gin.H, 0, len(sentNotifications))
 	for _, n := range sentNotifications {
@@ -268,17 +263,17 @@ func (h *Handler) SentNotificationsHandler(c *gin.Context) {
 // @Failure 401 {object} api.ErrorResponse "Требуется авторизация"
 // @Router /api/status [get]
 func (h *Handler) StatusHandler(c *gin.Context) {
-	notifications := h.storage.GetNotifications()
-	sentNotifications := h.storage.GetSentNotifications()
+	// Используем сервис для получения статистики
+	stats := h.notificationService.GetStats()
 
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"data": gin.H{
 			"status": "running",
 			"stats": gin.H{
-				"total_notifications":      len(notifications),
-				"total_sent_notifications": len(sentNotifications),
-				"pending_notifications":    len(notifications) - len(sentNotifications),
+				"total_notifications":      stats.TotalNotifications,
+				"total_sent_notifications": stats.TotalSentNotifications,
+				"pending_notifications":    stats.PendingNotifications,
 			},
 			"config": gin.H{
 				"app_name":    h.cfg.App.Name,

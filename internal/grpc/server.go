@@ -8,8 +8,7 @@ import (
 	"time"
 
 	"github.com/mdemidenko/monitoring-platform/config"
-	"github.com/mdemidenko/monitoring-platform/internal/notifier"
-	"github.com/mdemidenko/monitoring-platform/internal/repository"
+	"github.com/mdemidenko/monitoring-platform/internal/core"
 	grpcGenerated "github.com/mdemidenko/monitoring-platform/pkg/grpc"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/keepalive"
@@ -27,12 +26,11 @@ type GRPCServer struct {
 // NewGRPCServer создает новый gRPC сервер
 func NewGRPCServer(
 	cfg *config.Config,
-	telegramService *notifier.TelegramService,
-	storage *repository.MemoryStorage,
+	notificationService *core.NotificationService,
 ) (*GRPCServer, error) {
 	
 	// Создаем реализацию сервиса
-	monitoringService := NewMonitoringService(telegramService, storage, cfg)
+	monitoringService := NewMonitoringService(notificationService, cfg)
 	
 	// Настраиваем опции сервера
 	serverOpts := []grpc.ServerOption{
@@ -57,7 +55,6 @@ func NewGRPCServer(
 	
 	// Опционально добавляем TLS для production
 	if cfg.Server.GinMode == "production" {
-		// Здесь можно добавить TLS при необходимости
 		log.Println("⚠️  Внимание: gRPC запущен без TLS. Для production рекомендуется настроить TLS")
 	}
 	

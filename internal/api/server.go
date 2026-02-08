@@ -8,9 +8,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/mdemidenko/monitoring-platform/config"
+	"github.com/mdemidenko/monitoring-platform/internal/core"
 	"github.com/mdemidenko/monitoring-platform/internal/middleware"
-	"github.com/mdemidenko/monitoring-platform/internal/notifier"
-	"github.com/mdemidenko/monitoring-platform/internal/repository"
 	swaggerFiles "github.com/swaggo/files"
 	ginSwagger "github.com/swaggo/gin-swagger"
 )
@@ -23,7 +22,7 @@ type Server struct {
 }
 
 // NewServer создает новый сервер с Gin
-func NewServer(telegramService *notifier.TelegramService, storage *repository.MemoryStorage, cfg *config.Config) *Server {
+func NewServer(notificationService *core.NotificationService, cfg *config.Config) *Server {
 	// Устанавливаем режим Gin
 	setGinMode(cfg)
 	
@@ -31,7 +30,7 @@ func NewServer(telegramService *notifier.TelegramService, storage *repository.Me
 	router := gin.New()
 	
 	// Создаем обработчик
-	handler := NewHandler(telegramService, storage, cfg)
+	handler := NewHandler(notificationService, cfg)
 	
 	server := &Server{
 		router:  router,
