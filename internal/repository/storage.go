@@ -2,6 +2,8 @@ package repository
 
 import (
 	"fmt"
+	"sync"
+
 	"github.com/mdemidenko/monitoring-platform/internal/models"
 )
 
@@ -14,6 +16,7 @@ type Storage interface {
 type MemoryStorage struct {
 	notifications     []*models.Notification
 	sentNotifications []*models.SentNotification
+	mu                sync.RWMutex // Мьютекс для потокобезопасности
 }
 
 func NewMemoryStorage() *MemoryStorage {
@@ -24,6 +27,9 @@ func NewMemoryStorage() *MemoryStorage {
 }
 
 func (m *MemoryStorage) Store(entity any) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
 	switch v := entity.(type) {
 	case *models.Notification:
 		m.notifications = append(m.notifications, v)
@@ -37,9 +43,21 @@ func (m *MemoryStorage) Store(entity any) error {
 }
 
 func (m *MemoryStorage) GetNotifications() []*models.Notification {
-	return m.notifications
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	// Возвращаем копию для безопасности
+	result := make([]*models.Notification, len(m.notifications))
+	copy(result, m.notifications)
+	return result
 }
 
 func (m *MemoryStorage) GetSentNotifications() []*models.SentNotification {
-	return m.sentNotifications
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	// Возвращаем копию для безопасности
+	result := make([]*models.SentNotification, len(m.sentNotifications))
+	copy(result, m.sentNotifications)
+	return result
 }

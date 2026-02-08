@@ -163,25 +163,90 @@ func (a *TelegramAdapter) Send(ctx context.Context, notification *domain.Notific
 
 // HealthCheck проверяет доступность Telegram API
 func (a *TelegramAdapter) HealthCheck() error {
-    url := fmt.Sprintf("https://api.telegram.org/bot%s/getMe", a.config.BotToken)
-    
-    resp, err := a.client.Get(url)
-    if err != nil {
-        return domain.NewDomainError(
-            domain.ErrExternalService,
-            "Telegram API unavailable",
-            err,
-        )
-    }
-    defer resp.Body.Close()
-    
-    if resp.StatusCode != http.StatusOK {
-        return domain.NewDomainError(
-            domain.ErrExternalService,
-            fmt.Sprintf("Telegram API returned status: %d", resp.StatusCode),
-            nil,
-        )
-    }
-    
-    return nil
+	url := fmt.Sprintf("https://api.telegram.org/bot%s/getMe", a.config.BotToken)
+	
+	resp, err := a.client.Get(url)
+	if err != nil {
+		return domain.NewDomainError(
+			domain.ErrExternalService,
+			"Telegram API unavailable",
+			err,
+		)
+	}
+	defer resp.Body.Close()
+	
+	// Проверяем статус код ДО чтения тела
+	if resp.StatusCode != http.StatusOK {
+		// Пытаемся прочитать тело для получения деталей ошибки
+		body, _ := io.ReadAll(resp.Body)
+		errorMsg := fmt.Sprintf("Telegram API returned status: %d", resp.StatusCode)
+		
+		// Если в теле есть JSON с описанием ошибки
+		if len(body) > 0 {
+			var telegramResp struct {
+				OK     bool   `json:"ok"`
+				Error  string `json:"description,omitempty"`
+			}
+			if json.Unmarshal(body, &telegramResp) == nil && telegramResp.Error != "" {
+				errorMsg = fmt.Sprintf("Telegram API returned status: %d - %s", resp.StatusCode, telegramResp.Error)
+			}
+		}
+		
+		return domain.NewDomainError(
+			domain.ErrExternalService,
+			errorMsg,
+			nil,
+		)
+	}
+	
+	// Читаем тело ответа для статуса 200 OK
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return domain.NewDomainError(
+			domain.ErrExternalService,
+			"failed to read response from Telegram API",
+			err,
+		)
+	}
+	
+	if a.config.Debug {
+		a.logger.Printf("Telegram health check response: %s", string(body))
+	}
+	
+	// Проверяем что тело не пустое
+	if len(body) == 0 {
+		return domain.NewDomainError(
+			domain.ErrExternalService,
+			"Telegram API returned empty response",
+			nil,
+		)
+	}
+	
+	// Парсим JSON
+	var telegramResp struct {
+		OK     bool   `json:"ok"`
+		Error  string `json:"description,omitempty"`
+	}
+	
+	if err := json.Unmarshal(body, &telegramResp); err != nil {
+		return domain.NewDomainError(
+			domain.ErrExternalService,
+			"failed to parse response from Telegram API",
+			err,
+		)
+	}
+	
+	if !telegramResp.OK {
+		errorMsg := "Telegram API check failed"
+		if telegramResp.Error != "" {
+			errorMsg = fmt.Sprintf("Telegram API error: %s", telegramResp.Error)
+		}
+		return domain.NewDomainError(
+			domain.ErrExternalService,
+			errorMsg,
+			nil,
+		)
+	}
+	
+	return nil
 }
