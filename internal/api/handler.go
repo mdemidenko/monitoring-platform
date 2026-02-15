@@ -11,15 +11,15 @@ import (
 )
 
 type Handler struct {
-	notificationService *core.NotificationService
-	cfg                 *config.Config
+    notificationService domain.NotificationService
+    cfg                 *config.Config
 }
 
-func NewHandler(notificationService *core.NotificationService, cfg *config.Config) *Handler {
-	return &Handler{
-		notificationService: notificationService,
-		cfg:                 cfg,
-	}
+func NewHandler(notificationService domain.NotificationService, cfg *config.Config) *Handler {
+    return &Handler{
+        notificationService: notificationService,
+        cfg:                 cfg,
+    }
 }
 
 // HealthHandler проверяет здоровье сервиса
@@ -91,9 +91,9 @@ func (h *Handler) SendHandler(c *gin.Context) {
 	// Используем сервис из ядра
 	sentNotification, err := h.notificationService.SendNotification(c.Request.Context(), chatID, req.Text)
 	if err != nil {
-		// Определяем тип ошибки для соответствующего HTTP статуса
 		statusCode := http.StatusInternalServerError
 		errorType := "Internal Server Error"
+		message := err.Error()
 
 		if core.IsValidationError(err) {
 			statusCode = http.StatusBadRequest
@@ -103,11 +103,11 @@ func (h *Handler) SendHandler(c *gin.Context) {
 			errorType = "Bad Gateway"
 		}
 
-		c.JSON(statusCode, gin.H{
-			"success":     false,
-			"status_code": statusCode,
-			"error_type":  errorType,
-			"error":       err.Error(),
+		c.JSON(statusCode, ErrorResponse{
+			Success:    false,
+			StatusCode: statusCode,
+			ErrorType:  errorType,
+			Message:    message,
 		})
 		return
 	}
@@ -485,3 +485,4 @@ type AuthError struct {
 	Message    string      `json:"message" example:"Invalid username or password"`
 	Details    interface{} `json:"details,omitempty"`
 }
+

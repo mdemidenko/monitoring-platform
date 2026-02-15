@@ -8,7 +8,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/mdemidenko/monitoring-platform/config"
-	"github.com/mdemidenko/monitoring-platform/internal/core"
+	"github.com/mdemidenko/monitoring-platform/internal/domain"
 	"github.com/mdemidenko/monitoring-platform/internal/middleware"
 	swaggerFiles "github.com/swaggo/files"
 	ginSwagger "github.com/swaggo/gin-swagger"
@@ -22,7 +22,7 @@ type Server struct {
 }
 
 // NewServer создает новый сервер с Gin
-func NewServer(notificationService *core.NotificationService, cfg *config.Config) *Server {
+func NewServer(service domain.NotificationService, cfg *config.Config) *Server  {
 	// Устанавливаем режим Gin
 	setGinMode(cfg)
 	
@@ -30,7 +30,7 @@ func NewServer(notificationService *core.NotificationService, cfg *config.Config
 	router := gin.New()
 	
 	// Создаем обработчик
-	handler := NewHandler(notificationService, cfg)
+	handler := NewHandler(service, cfg)
 	
 	server := &Server{
 		router:  router,
