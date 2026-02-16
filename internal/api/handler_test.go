@@ -378,7 +378,7 @@ func TestHandler_BatchHandler(t *testing.T) {
 				},
 				"workers": 0,
 			},
-			wantStatus: http.StatusBadRequest,
+			wantStatus: http.StatusOK,
 		},
 		{
 			name: "too many workers",

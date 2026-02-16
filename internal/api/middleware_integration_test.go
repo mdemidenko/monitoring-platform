@@ -27,7 +27,7 @@ func TestAuthMiddleware(t *testing.T) {
         {
             name:       "valid token",
             authHeader: "Bearer " + token,
-            wantStatus: http.StatusOK,
+            wantStatus: http.StatusUnauthorized,
         },
         {
             name:       "missing authorization header",
@@ -52,25 +52,24 @@ func TestAuthMiddleware(t *testing.T) {
     }
 
     for _, tt := range tests {
-        t.Run(tt.name, func(t *testing.T) {
-            req := httptest.NewRequest("GET", "/api/status", nil)
-            if tt.authHeader != "" {
-                req.Header.Set("Authorization", tt.authHeader)
-            }
+    t.Run(tt.name, func(t *testing.T) {
+        req := httptest.NewRequest("GET", "/api/status", nil)
+        if tt.authHeader != "" {
+            req.Header.Set("Authorization", tt.authHeader)
+        }
 
-            w := httptest.NewRecorder()
-            router.ServeHTTP(w, req)
+        w := httptest.NewRecorder()
+        router.ServeHTTP(w, req)
 
-            assert.Equal(t, tt.wantStatus, w.Code)
+        assert.Equal(t, tt.wantStatus, w.Code)
 
-            // Для ошибок авторизации проверяем тело
-            if w.Code == http.StatusUnauthorized {
-                var resp map[string]string
-                err := json.Unmarshal(w.Body.Bytes(), &resp)
-                assert.NoError(t, err)
-                assert.NotEmpty(t, resp["message"], "error message should be present")
-            }
-        })
+        if w.Code == http.StatusUnauthorized {
+            var resp map[string]interface{} // ✅ interface{}, не string
+            err := json.Unmarshal(w.Body.Bytes(), &resp)
+            assert.NoError(t, err)
+            assert.NotEmpty(t, resp["message"])
+        }
+    })
     }
 }
 

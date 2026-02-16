@@ -308,12 +308,9 @@ type BatchMessage struct {
 // BatchRequest представляет запрос на пакетную отправку уведомлений
 // @Description Запрос на пакетную отправку уведомлений с настройками интервалов и параллелизма
 type BatchRequest struct {
-	// Список сообщений для отправки
-	Messages []BatchMessage `json:"messages" binding:"required,min=1,dive"`
-	// Интервал между отправками сообщений в миллисекундах (опционально)
-	IntervalMs int `json:"interval_ms" example:"1000"`
-	// Количество параллельных воркеров для отправки (опционально, от 1 до 10)
-	Workers int `json:"workers" example:"2"`
+    Messages []BatchMessage `json:"messages" binding:"required,min=1,dive"`
+    IntervalMs int `json:"interval_ms" binding:"omitempty,min=0"`
+    Workers    int `json:"workers" binding:"omitempty,min=1,max=10"`
 }
 
 // HealthResponse представляет ответ на запрос проверки здоровья

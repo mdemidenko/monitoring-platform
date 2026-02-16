@@ -87,12 +87,12 @@ func TestServer_Routes(t *testing.T) {
 		{"GET", "/", http.StatusOK},
 		{"GET", "/api/health", http.StatusOK},
 		{"POST", "/api/auth/login", http.StatusBadRequest}, // Нет тела
-		{"POST", "/api/send", http.StatusBadRequest}, // Нет аутентификации
-		{"POST", "/api/batch", http.StatusBadRequest}, // Нет аутентификации
-		{"GET", "/api/notifications", http.StatusBadRequest}, // Нет аутентификации
-		{"GET", "/api/notifications/sent", http.StatusBadRequest}, // Нет аутентификации
-		{"GET", "/api/status", http.StatusBadRequest}, // Нет аутентификации
-		{"GET", "/swagger/index.html", http.StatusMovedPermanently}, // Swagger redirect
+		{"POST", "/api/send", http.StatusUnauthorized}, // Нет аутентификации
+		{"POST", "/api/batch", http.StatusUnauthorized}, // Нет аутентификации
+		{"GET", "/api/notifications", http.StatusUnauthorized}, // Нет аутентификации
+		{"GET", "/api/notifications/sent", http.StatusUnauthorized}, // Нет аутентификации
+		{"GET", "/api/status", http.StatusUnauthorized}, // Нет аутентификации
+		{"GET", "/swagger/index.html", http.StatusOK}, // Swagger redirect
 		{"GET", "/nonexistent", http.StatusNotFound}, // 404
 	}
 	
