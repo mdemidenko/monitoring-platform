@@ -3,6 +3,7 @@ package config
 import (
     "testing"
     "github.com/stretchr/testify/assert"
+    "github.com/stretchr/testify/require"
 	"path/filepath"
 	"os"
     "flag"
@@ -194,23 +195,23 @@ func TestConfig_overrideFromEnv(t *testing.T) {
     origLogin := os.Getenv("AUTH_LOGIN")
     origPassword := os.Getenv("AUTH_PASSWORD")
     defer func() {
-        os.Setenv("TELEGRAM_BOT_TOKEN", origBotToken)
-        os.Setenv("TELEGRAM_CHAT_ID", origChatID)
-        os.Setenv("TELEGRAM_DEBUG", origDebug)
-        os.Setenv("AUTH_JWT_SECRET", origJWTSecret)
-        os.Setenv("AUTH_JWT_EXPIRATION_HOURS", origJWTExp)
-        os.Setenv("AUTH_LOGIN", origLogin)
-        os.Setenv("AUTH_PASSWORD", origPassword)
+        t.Setenv("TELEGRAM_BOT_TOKEN", origBotToken)
+        t.Setenv("TELEGRAM_CHAT_ID", origChatID)
+        t.Setenv("TELEGRAM_DEBUG", origDebug)
+        t.Setenv("AUTH_JWT_SECRET", origJWTSecret)
+        t.Setenv("AUTH_JWT_EXPIRATION_HOURS", origJWTExp)
+        t.Setenv("AUTH_LOGIN", origLogin)
+        t.Setenv("AUTH_PASSWORD", origPassword)
     }()
 
     // Устанавливаем переменные
-    os.Setenv("TELEGRAM_BOT_TOKEN", "env-token")
-    os.Setenv("TELEGRAM_CHAT_ID", "987654")
-    os.Setenv("TELEGRAM_DEBUG", "true")
-    os.Setenv("AUTH_JWT_SECRET", "env-secret")
-    os.Setenv("AUTH_JWT_EXPIRATION_HOURS", "48")
-    os.Setenv("AUTH_LOGIN", "env-user")
-    os.Setenv("AUTH_PASSWORD", "env-pass")
+    t.Setenv("TELEGRAM_BOT_TOKEN", "env-token")
+    t.Setenv("TELEGRAM_CHAT_ID", "987654")
+    t.Setenv("TELEGRAM_DEBUG", "true")
+    t.Setenv("AUTH_JWT_SECRET", "env-secret")
+    t.Setenv("AUTH_JWT_EXPIRATION_HOURS", "48")
+    t.Setenv("AUTH_LOGIN", "env-user")
+    t.Setenv("AUTH_PASSWORD", "env-pass")
 
     cfg := &Config{
         Telegram: TelegramConfig{
@@ -263,12 +264,16 @@ auth:
   login: "testuser"
   password: "testpass"
 `
+
+    // ✅ Используем переменную `data`, а не строку
     err := os.WriteFile(tmpFile, []byte(data), 0644)
-    assert.NoError(t, err)
+    require.NoError(t, err, "Failed to write test config file")
 
     cfg, err := LoadConfig(tmpFile)
-    assert.NoError(t, err)
+    require.NoError(t, err) // ✅ Лучше require, чтобы остановить тест
     assert.NotNil(t, cfg)
+
+    // Проверяем значения
     assert.Equal(t, "test-token", cfg.Telegram.BotToken)
     assert.Equal(t, "123456", cfg.Telegram.ChatID)
     assert.Equal(t, "test-app", cfg.App.Name)
@@ -283,10 +288,16 @@ func TestLoadConfig_Error(t *testing.T) {
     assert.Error(t, err)
 
     // Неверный YAML
-    tmpFile := filepath.Join(t.TempDir(), "invalid.yaml")
-    os.WriteFile(tmpFile, []byte("invalid: yaml: :"), 0644)
+    tmpDir := t.TempDir()
+    tmpFile := filepath.Join(tmpDir, "invalid.yaml")
+
+    // ✅ Пишем файл и проверяем ошибку
+    err = os.WriteFile(tmpFile, []byte("invalid: yaml: :"), 0644)
+    require.NoError(t, err, "Failed to create test invalid YAML file")
+
+    // Проверяем, что LoadConfig возвращает ошибку
     _, err = LoadConfig(tmpFile)
-    assert.Error(t, err)
+    assert.Error(t, err, "Expected error when loading invalid YAML")
 }
 
 func TestLoadConfigWithDefaults(t *testing.T) {
@@ -316,7 +327,8 @@ auth:
   login: "admin"
   password: "pass"
 `
-    os.WriteFile(configPath, []byte(data), 0644)
+    err := os.WriteFile(configPath, []byte(data), 0644)
+    require.NoError(t, err, "Failed to write config file")
 
     // Сохраняем аргументы
     origArgs := os.Args
@@ -335,13 +347,17 @@ func TestFindConfigFile_SearchPaths(t *testing.T) {
     // Создаём временную директорию
     tmpDir := t.TempDir()
     configPath := filepath.Join(tmpDir, "config.yaml")
-    os.WriteFile(configPath, []byte("test: config"), 0644)
+    err := os.WriteFile(configPath, []byte("test: config"), 0644)
+    require.NoError(t, err, "Failed to write test config file")
 
     // Подменяем рабочую директорию
     origWd, err := os.Getwd()
     assert.NoError(t, err)
-    defer os.Chdir(origWd)
-
+    defer func() {
+    if err := os.Chdir(origWd); err != nil {
+        t.Logf("Failed to restore working directory: %v", err)
+        }
+    }()
     err = os.Chdir(tmpDir)
     assert.NoError(t, err)
 
