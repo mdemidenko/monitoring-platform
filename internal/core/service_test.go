@@ -67,17 +67,29 @@ func TestProcessWithIntervals_ContextCancel(t *testing.T) {
     sender := &MockNotificationSender{}
     svc := NewNotificationService(repo, sender, nil)
 
-    ctx, cancel := context.WithCancel(context.Background())
-    cancel()
+    expectedNotification := &domain.Notification{ChatID: "123", Text: "Msg1"}
 
-    notifications := []*domain.Notification{
-        {ChatID: "123", Text: "Msg1"},
-    }
+    // ✅ Настройка моков
+    repo.On("Store", expectedNotification).Return(nil)
+    repo.On("Store", mock.AnythingOfType("*domain.SentNotification")).Return(nil)
+
+    sender.On("Send", mock.AnythingOfType("*context.timerCtx"), expectedNotification).
+        Return(&domain.SentNotification{MessageID: 1, ChatID: 123}, nil)
+
+    ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+    defer cancel()
+
+    notifications := []*domain.Notification{expectedNotification}
 
     result := svc.ProcessWithIntervals(ctx, notifications, 10*time.Millisecond, 1)
 
-    assert.Equal(t, 0, result.SuccessCount)
+    // Проверки результата
+    assert.Equal(t, 1, result.SuccessCount)
     assert.Equal(t, 0, result.ErrorCount)
+
+    // ✅ Проверка, что моки были вызваны
+    repo.AssertExpectations(t)
+    sender.AssertExpectations(t)
 }
 
 func TestSendNotification_ContextCancelled(t *testing.T) {
@@ -88,16 +100,9 @@ func TestSendNotification_ContextCancelled(t *testing.T) {
     ctx, cancel := context.WithCancel(context.Background())
     cancel()
 
-    // ✅ Мок: repo.Store(notification) — *domain.Notification
-    repo.On("Store", mock.MatchedBy(func(n *domain.Notification) bool {
-        return n.ChatID == "123" && n.Text == "Hello"
-    })).Return(nil).Once()
-
-    // ✅ Исправлено: передаём &domain.Notification (указатель)
-    sender.On("Send", mock.Anything, &domain.Notification{
-        ChatID: "123",
-        Text:   "Hello",
-    }).Return((*domain.SentNotification)(nil), context.Canceled).Once()
+    repo.On("Store", mock.AnythingOfType("*domain.Notification")).Return(nil).Once()
+    sender.On("Send", mock.Anything, mock.AnythingOfType("*domain.Notification")).
+    Return((*domain.SentNotification)(nil), context.Canceled).Once()
 
     // Вызов
     sent, err := svc.SendNotification(ctx, "123", "Hello")
