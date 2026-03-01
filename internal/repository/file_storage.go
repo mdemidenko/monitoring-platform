@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 
 	"github.com/mdemidenko/monitoring-platform/internal/models"
@@ -120,22 +121,25 @@ func (r *repository) SaveResults(ctx context.Context, results <-chan models.Resu
 
 // saveToFile - внутренний метод сохранения
 func (r *repository) saveToFile(results []models.Result) error {
-	if len(results) == 0 {
-		return nil // ничего не сохраняем
-	}
-	
-	file, err := os.Create(r.outputFile)
-	if err != nil {
-		return fmt.Errorf("ошибка создания файла: %w", err)
-	}
-	defer file.Close()
+    if len(results) == 0 {
+        return nil
+    }
+    
+    file, err := os.Create(r.outputFile)
+    if err != nil {
+        return fmt.Errorf("ошибка создания файла: %w", err)
+    }
+    defer func() {
+        if closeErr := file.Close(); closeErr != nil {
+            log.Printf("Ошибка при закрытии файла %s: %v", r.outputFile, closeErr)
+        }
+    }()
 
-	encoder := json.NewEncoder(file)
-	encoder.SetIndent("", "  ")
-
-	if err := encoder.Encode(results); err != nil {
-		return fmt.Errorf("ошибка записи JSON: %w", err)
-	}
-
-	return nil
+    encoder := json.NewEncoder(file)
+    encoder.SetIndent("", "  ")
+    if err := encoder.Encode(results); err != nil {
+        return fmt.Errorf("ошибка записи JSON: %w", err)
+    }
+    
+    return nil
 }

@@ -1,13 +1,14 @@
 package logger
 
 import (
-    "context"
-    "testing"
-    "time"
+	"context"
+	"testing"
+	"time"
 
-    "github.com/mdemidenko/monitoring-platform/internal/models"
-    "github.com/mdemidenko/monitoring-platform/internal/repository"
-    "github.com/stretchr/testify/assert"
+	"github.com/mdemidenko/monitoring-platform/internal/models"
+	"github.com/mdemidenko/monitoring-platform/internal/repository"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // TestStorageLogger_New проверяет создание логгера
@@ -76,8 +77,8 @@ func TestStorageLogger_checkForChanges_NewNotifications(t *testing.T) {
     // Добавляем уведомления
     notification1 := &models.Notification{ChatID: "123", Text: "Hello"}
     notification2 := &models.Notification{ChatID: "456", Text: "World"}
-    storage.Store(notification1)
-    storage.Store(notification2)
+    require.NoError(t, storage.Store(notification1), "Failed to store notification1")
+    require.NoError(t, storage.Store(notification2), "Failed to store notification2")
 
     // Инициализируем состояние
     lastNotifications := make([]*models.Notification, 0)
@@ -104,8 +105,8 @@ func TestStorageLogger_checkForChanges_NewSentNotifications(t *testing.T) {
     // Добавляем отправленные уведомления
     sent1 := &models.SentNotification{MessageID: 1, ChatID: 123}
     sent2 := &models.SentNotification{MessageID: 2, ChatID: 456}
-    storage.Store(sent1)
-    storage.Store(sent2)
+    require.NoError(t, storage.Store(sent1), "Failed to store Message1")
+    require.NoError(t, storage.Store(sent2), "Failed to store Message2")
 
     // Инициализируем состояние
     lastNotifications := make([]*models.Notification, 0)
@@ -131,7 +132,7 @@ func TestStorageLogger_checkForChanges_NoChanges(t *testing.T) {
 
     // Добавляем уведомления
     notification := &models.Notification{ChatID: "123", Text: "Hello"}
-    storage.Store(notification)
+    require.NoError(t, storage.Store(notification), "Failed to store notification")
 
     // Инициализируем состояние
     lastNotifications := make([]*models.Notification, 0)
@@ -164,8 +165,8 @@ func TestStorageLogger_checkForChanges_BothChanges(t *testing.T) {
     // Добавляем оба типа
     notification := &models.Notification{ChatID: "123", Text: "Hello"}
     sent := &models.SentNotification{MessageID: 1, ChatID: 123}
-    storage.Store(notification)
-    storage.Store(sent)
+    require.NoError(t, storage.Store(notification), "Failed to store notification")
+    require.NoError(t, storage.Store(sent), "Failed to store sent Message")
 
     // Инициализируем состояние
     lastNotifications := make([]*models.Notification, 0)

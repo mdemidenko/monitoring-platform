@@ -201,7 +201,9 @@ func TestServer_Start_InitializesHTTPServer(t *testing.T) {
     // Останавливаем
     ctx, cancel := context.WithTimeout(context.Background(), time.Second)
     defer cancel()
-    server.Shutdown(ctx)
+    if err := server.Shutdown(ctx); err != nil {
+    	t.Logf("Server shutdown failed: %v", err)
+	}
 }
 
 func TestServer_Shutdown_WithoutServer(t *testing.T) {

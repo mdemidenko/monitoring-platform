@@ -1,20 +1,21 @@
 package notifier
 
 import (
-    "context"
-    "testing"
-    "time"
-    "fmt"
-    "net/http/httptest"
-    "net/http"
-    "net"
-    "crypto/tls"
+	"context"
+	"crypto/tls"
+	"fmt"
+	"net"
+	"net/http"
+	"net/http/httptest"
+	"testing"
+	"time"
 
-    "github.com/h2non/gock"
-    "github.com/mdemidenko/monitoring-platform/config"
-    "github.com/mdemidenko/monitoring-platform/internal/models"
-    "github.com/stretchr/testify/assert"
-    "github.com/stretchr/testify/mock"
+	"github.com/h2non/gock"
+	"github.com/mdemidenko/monitoring-platform/config"
+	"github.com/mdemidenko/monitoring-platform/internal/models"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
 )
 
 // MockStorage — мок для repository.Storage
@@ -523,14 +524,22 @@ func TestSendNotification_ReadBodyError(t *testing.T) {
 
         // Немедленно разрываем соединение
         conn, bufrw, _ := w.(http.Hijacker).Hijack()
-        defer conn.Close()
+        defer func() {
+            if err := conn.Close(); err != nil {
+                t.Logf("Failed to close connection: %v", err)
+            }
+        }()
 
         // Отправляем часть тела
-        bufrw.Write([]byte(`{"ok": true, "result": {"message_id": 1, "chat": {"id": 12345}}`))
-        bufrw.Flush()
+        _, err := bufrw.Write([]byte("HTTP/1.1 200 OK\r\n"))
+        require.NoError(t, err, "Failed to write response")
+        err = bufrw.Flush()
+        require.NoError(t, err, "Failed to flush response")
 
         // Закрываем соединение → следующее чтение вызовет ошибку
-        conn.Close()
+       if err := conn.Close(); err != nil {
+        t.Logf("Failed to close connection: %v", err)
+       }
     }))
     defer server.Close()
 

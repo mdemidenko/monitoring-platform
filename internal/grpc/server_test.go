@@ -29,7 +29,9 @@ func TestGRPCServer_StartAndShutdown(t *testing.T) {
     assert.NoError(t, err)
 
     go func() {
-        server.Start(cfg.Server.Port)
+    if err := server.Start(cfg.Server.Port); err != nil {
+        t.Logf("gRPC server failed to start or stopped: %v", err)
+        }
     }()
 
     time.Sleep(100 * time.Millisecond)

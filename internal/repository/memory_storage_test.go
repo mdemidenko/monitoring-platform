@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/mdemidenko/monitoring-platform/internal/models"
+	"github.com/stretchr/testify/require"
 )
 
 func TestNewMemoryStorage(t *testing.T) {
@@ -260,7 +261,7 @@ func TestMemoryStorage_GetNotifications_ReturnsCopy(t *testing.T) {
 	storage := NewMemoryStorage()
 
 	notification := &models.Notification{ChatID: "123", Text: "Test"}
-	storage.Store(notification)
+	require.NoError(t, storage.Store(notification), "Storage should not fail on Store")
 
 	// Получаем список
 	notifications := storage.GetNotifications()
@@ -279,7 +280,7 @@ func TestMemoryStorage_GetSentNotifications_ReturnsCopy(t *testing.T) {
 	storage := NewMemoryStorage()
 
 	sentNotification := &models.SentNotification{MessageID: 1, ChatID: 123}
-	storage.Store(sentNotification)
+	require.NoError(t, storage.Store(sentNotification), "Storage should not fail on Store")
 
 	// Получаем список
 	sentNotifications := storage.GetSentNotifications()

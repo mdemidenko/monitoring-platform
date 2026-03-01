@@ -3,12 +3,14 @@ package repository
 import (
 	"context"
 	"encoding/json"
+	"log"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/mdemidenko/monitoring-platform/internal/models"
+	"github.com/stretchr/testify/require"
 )
 
 func TestNewRepository(t *testing.T) {
@@ -246,7 +248,8 @@ func TestRepository_GetServices_ContextCancelledBeforeStart(t *testing.T) {
 	// Создаем файл
 	services := []models.Service{{ID: 1, Name: "Test"}}
 	data, _ := json.Marshal(services)
-	os.WriteFile(inputFile, data, 0644)
+	err := os.WriteFile(inputFile, data, 0644)
+	require.NoError(t, err, "Failed to write input file")
 	
 	repo := NewRepository(inputFile, "output.json")
 	
@@ -661,7 +664,9 @@ func TestRepository_saveToFile_InternalMethod(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Удаляем предыдущий файл если существует
-			os.Remove(outputFile)
+			if err := os.Remove(outputFile); err != nil {
+    			t.Logf("Failed to remove output file %s: %v", outputFile, err)
+			}
 			
 			err := repo.saveToFile(tt.results)
 			
@@ -830,11 +835,11 @@ func TestRepository_saveToFile_WriteError(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create test file: %v", err)
 	}
-	file.Close()
-	
-	// Пытаемся сделать директорию readonly (не всегда работает)
-	// os.Chmod(tempDir, 0444)
-	// defer os.Chmod(tempDir, 0755)
+	defer func() {
+    	if err := file.Close(); err != nil {
+        	log.Printf("Failed to close file %s: %v", outputFile, err)
+    	}
+	}()
 	
 	repo := NewRepository("input.json", outputFile).(*repository)
 	
