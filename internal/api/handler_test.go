@@ -12,6 +12,7 @@ import (
 	"errors"
 
 	"github.com/gin-gonic/gin"
+	"github.com/stretchr/testify/require"
 	"github.com/mdemidenko/monitoring-platform/internal/domain"
 	"github.com/stretchr/testify/assert"
 )
@@ -657,7 +658,8 @@ func TestHandler_SendHandler_InternalServerError(t *testing.T) {
 
     assert.Equal(t, http.StatusInternalServerError, w.Code)
     var resp ErrorResponse
-    json.Unmarshal(w.Body.Bytes(), &resp)
+    err := json.Unmarshal(w.Body.Bytes(), &resp)
+	require.NoError(t, err, "Failed to unmarshal JSON response")
     assert.Equal(t, "Internal Server Error", resp.ErrorType)
 }
 
@@ -680,7 +682,8 @@ func TestHandler_SendHandler_BadGatewayError(t *testing.T) {
 
     assert.Equal(t, http.StatusBadGateway, w.Code)
     var resp ErrorResponse
-    json.Unmarshal(w.Body.Bytes(), &resp)
+    err := json.Unmarshal(w.Body.Bytes(), &resp)
+	require.NoError(t, err, "Failed to unmarshal JSON response")
     assert.Equal(t, "Bad Gateway", resp.ErrorType)
 }
 

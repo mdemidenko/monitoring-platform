@@ -119,7 +119,11 @@ func (a *TelegramAdapter) Send(ctx context.Context, notification *domain.Notific
             err,
         )
     }
-    defer resp.Body.Close()
+    defer func() {
+    if err := resp.Body.Close(); err != nil {
+        log.Printf("Failed to close response body: %v", err)
+    }
+    }()
     
     // Читаем ответ
     body, err := io.ReadAll(resp.Body)
@@ -173,7 +177,11 @@ func (a *TelegramAdapter) HealthCheck() error {
 			err,
 		)
 	}
-	defer resp.Body.Close()
+	defer func() {
+    if err := resp.Body.Close(); err != nil {
+        log.Printf("Failed to close response body: %v", err)
+        }
+    }()
 	
 	// Проверяем статус код ДО чтения тела
 	if resp.StatusCode != http.StatusOK {
