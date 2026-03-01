@@ -270,7 +270,8 @@ func TestServer_Start_InitializesHTTPServer(t *testing.T) {
     resp, err := http.Get("http://127.0.0.1:8081/api/health")
     require.NoError(t, err)
     assert.Equal(t, http.StatusOK, resp.StatusCode)
-    resp.Body.Close()
+    err = resp.Body.Close()
+	require.NoError(t, err, "Failed to close response body")
 
     // Останавливаем
     err = server.Shutdown(context.Background())
