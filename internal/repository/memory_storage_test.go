@@ -6,6 +6,7 @@ import (
 
 	"github.com/mdemidenko/monitoring-platform/internal/models"
 	"github.com/stretchr/testify/require"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestNewMemoryStorage(t *testing.T) {
@@ -258,41 +259,42 @@ func TestMemoryStorage_Store_DuplicateReferences(t *testing.T) {
 }
 
 func TestMemoryStorage_GetNotifications_ReturnsCopy(t *testing.T) {
-	storage := NewMemoryStorage()
+    storage := NewMemoryStorage()
+    notification := &models.Notification{ChatID: "123", Text: "Test"}
+    require.NoError(t, storage.Store(notification), "Storage should not fail on Store")
 
-	notification := &models.Notification{ChatID: "123", Text: "Test"}
-	require.NoError(t, storage.Store(notification), "Storage should not fail on Store")
+    // Получаем список
+    notifications := storage.GetNotifications()
+    assert.Equal(t, 1, len(notifications), "Should have 1 notification")
 
-	// Получаем список
-	notifications := storage.GetNotifications()
+    // Модифицируем — это должно быть локально
+    notifications = append(notifications, &models.Notification{ChatID: "456", Text: "Extra"})
 
-	// Модифицируем возвращенный слайс (не должен влиять на хранилище)
-	notifications = append(notifications, &models.Notification{ChatID: "456", Text: "Extra"})
-
-	// Проверяем что хранилище не изменилось
-	storageNotifications := storage.GetNotifications()
-	if len(storageNotifications) != 1 {
-		t.Errorf("Storage should still have 1 notification, got %d", len(storageNotifications))
-	}
+    // Проверяем, что модификация не повлияла на хранилище
+    storageNotifications := storage.GetNotifications()
+    assert.Equal(t, 1, len(storageNotifications), "Storage should still have 1 notification")
+    assert.Equal(t, 2, len(notifications), "Local slice should have 2 notifications") // ✅ Используем!
 }
 
 func TestMemoryStorage_GetSentNotifications_ReturnsCopy(t *testing.T) {
-	storage := NewMemoryStorage()
+    storage := NewMemoryStorage()
+    sentNotification := &models.SentNotification{MessageID: 1, ChatID: 123}
+    require.NoError(t, storage.Store(sentNotification), "Storage should not fail on Store")
 
-	sentNotification := &models.SentNotification{MessageID: 1, ChatID: 123}
-	require.NoError(t, storage.Store(sentNotification), "Storage should not fail on Store")
+    // Получаем список
+    sentNotifications := storage.GetSentNotifications()
+    assert.Equal(t, 1, len(sentNotifications), "Should have 1 sent notification")
 
-	// Получаем список
-	sentNotifications := storage.GetSentNotifications()
+    // Модифицируем — это должно быть локально
+    sentNotifications = append(sentNotifications, &models.SentNotification{MessageID: 2, ChatID: 456})
+	assert.Equal(t, 2, len(sentNotifications), "Local slice should have 2 sent notifications")
 
-	// Модифицируем возвращенный слайс
-	sentNotifications = append(sentNotifications, &models.SentNotification{MessageID: 2, ChatID: 456})
+    // Проверяем, что хранилище не изменилось
+    storageSentNotifications := storage.GetSentNotifications()
+    assert.Equal(t, 1, len(storageSentNotifications), "Storage should still have 1 sent notification")
 
-	// Проверяем что хранилище не изменилось
-	storageSentNotifications := storage.GetSentNotifications()
-	if len(storageSentNotifications) != 1 {
-		t.Errorf("Storage should still have 1 sent notification, got %d", len(storageSentNotifications))
-	}
+    // ✅ Проверяем, что локальный срез изменился
+    assert.Equal(t, 2, len(sentNotifications), "Local slice should have 2 sent notifications")
 }
 
 func TestMemoryStorage_ConcurrentAccess(t *testing.T) {

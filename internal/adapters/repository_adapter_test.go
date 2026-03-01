@@ -154,9 +154,6 @@ func TestMemoryStorageAdapter_Interface(t *testing.T) {
 	storage := repository.NewMemoryStorage()
 	adapter := NewMemoryStorageAdapter(storage, nil)
 
-	// Проверяем что адаптер реализует интерфейс domain.NotificationRepository
-	var _ domain.NotificationRepository = adapter
-
 	// Базовый тест работы
 	notification := &domain.Notification{
 		ChatID: "test-chat",

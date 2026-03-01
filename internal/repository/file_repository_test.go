@@ -54,8 +54,6 @@ func TestNewRepository(t *testing.T) {
 				t.Error("Expected *repository type")
 			}
 			
-			// Проверяем что реализует интерфейс
-			var _ Repository = repo
 		})
 	}
 }

@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/mdemidenko/monitoring-platform/config"
-	"github.com/mdemidenko/monitoring-platform/internal/domain"
 )
 
 // MockRoundTripper - мок для http.RoundTripper
@@ -33,14 +32,6 @@ func newTestTelegramConfig() *config.TelegramConfig {
 		ChatID:   "test-chat-id",
 		Timeout:  5,
 		Debug:    false,
-	}
-}
-
-// newTestNotification создает тестовое уведомление
-func newTestNotification() *domain.Notification {
-	return &domain.Notification{
-		ChatID: "123",
-		Text:   "Test message",
 	}
 }
 

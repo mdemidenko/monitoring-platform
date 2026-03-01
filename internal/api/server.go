@@ -5,6 +5,7 @@ import (
 	"log"
 	"net/http"
 	"time"
+	"net"
 
 	"github.com/gin-gonic/gin"
 	"github.com/mdemidenko/monitoring-platform/config"
@@ -182,10 +183,14 @@ func (s *Server) setupRoutes() {
 
 // Start запускает сервер
 func (s *Server) Start(port string) {
-	addr := ":" + port
-	if s.cfg.Server.Host != "" && s.cfg.Server.Host != "localhost" {
-		addr = s.cfg.Server.Host + ":" + port
-	}
+	  // Определяем хост
+    host := s.cfg.Server.Host
+    if host == "" || host == "localhost" {
+        host = "127.0.0.1"
+    }
+    
+    // Собираем адрес
+    addr := net.JoinHostPort(host, port)
 	
 	s.httpServer = &http.Server{
 		Addr:           addr,
@@ -219,4 +224,9 @@ func (s *Server) Shutdown(ctx context.Context) error {
 		return s.httpServer.Shutdown(ctx)
 	}
 	return nil
+}
+
+// HttpServer возвращает внутренний HTTP-сервер (для тестов)
+func (s *Server) HttpServer() *http.Server {
+    return s.httpServer
 }

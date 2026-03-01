@@ -9,10 +9,53 @@ import (
 	"time"
 	"github.com/mdemidenko/monitoring-platform/internal/domain"
 
+	"github.com/mdemidenko/monitoring-platform/config"
+    "github.com/mdemidenko/monitoring-platform/internal/core"
+    "github.com/stretchr/testify/require"
+	"github.com/stretchr/testify/mock"
+
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 )
 
+// MockNotificationRepository — мок для domain.NotificationRepository
+type MockNotificationRepository struct {
+    mock.Mock
+}
+
+func (m *MockNotificationRepository) Store(entity interface{}) error {
+    args := m.Called(entity)
+    return args.Error(0)
+}
+
+func (m *MockNotificationRepository) GetNotifications() []*domain.Notification {
+    args := m.Called()
+    return args.Get(0).([]*domain.Notification)
+}
+
+func (m *MockNotificationRepository) GetSentNotifications() []*domain.SentNotification {
+    args := m.Called()
+    return args.Get(0).([]*domain.SentNotification)
+}
+
+func (m *MockNotificationRepository) GetStats() *domain.ServiceStats {
+    args := m.Called()
+    return args.Get(0).(*domain.ServiceStats)
+}
+
+type MockNotificationSender struct {
+    mock.Mock
+}
+
+func (m *MockNotificationSender) Send(ctx context.Context, notification *domain.Notification) (*domain.SentNotification, error) {
+    args := m.Called(ctx, notification)
+    return args.Get(0).(*domain.SentNotification), args.Error(1)
+}
+
+func (m *MockNotificationSender) HealthCheck() error {
+    args := m.Called()
+    return args.Error(0)
+}
 func TestNewServer(t *testing.T) {
 	cfg := newTestConfig()
 	mockService := &TestNotificationService{}
@@ -182,34 +225,61 @@ func TestServer_setGinMode(t *testing.T) {
     }
 }
 
-func TestServer_Start_InitializesHTTPServer(t *testing.T) {
-    cfg := newTestConfig()
-    cfg.Server.Port = "0"
-    mockService := &TestNotificationService{}
-    server := NewServer(mockService, cfg)
-
-    // Запускаем в горутине
-    go func() {
-        server.Start(cfg.Server.Port)
-    }()
-
-    time.Sleep(100 * time.Millisecond)
-
-    assert.NotNil(t, server.httpServer)
-    assert.Equal(t, ":"+cfg.Server.Port, server.httpServer.Addr)
-
-    // Останавливаем
-    ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-    defer cancel()
-    if err := server.Shutdown(ctx); err != nil {
-    	t.Logf("Server shutdown failed: %v", err)
-	}
-}
-
 func TestServer_Shutdown_WithoutServer(t *testing.T) {
     server := &Server{} // httpServer == nil
     ctx, cancel := context.WithTimeout(context.Background(), time.Second)
     defer cancel()
     err := server.Shutdown(ctx)
     assert.NoError(t, err)
+}
+
+func TestServer_Start_InitializesHTTPServer(t *testing.T) {
+    cfg := &config.Config{
+        Server: config.ServerConfig{
+            Host: "127.0.0.1",
+            Port: "8081",
+        },
+    }
+
+    // Моки
+    mockRepo := &MockNotificationRepository{}
+    mockSender := &MockNotificationSender{}
+
+    // Ожидания
+    mockRepo.On("GetNotifications").Return([]*domain.Notification{})
+    mockRepo.On("GetSentNotifications").Return([]*domain.SentNotification{})
+    mockSender.On("HealthCheck").Return(nil)
+
+    // Service
+    notificationService := core.NewNotificationService(mockRepo, mockSender, nil)
+
+    // Server
+    server := NewServer(notificationService, cfg)
+
+    // Запуск
+    started := make(chan bool, 1)
+    go func() {
+        server.Start(cfg.Server.Port)
+        close(started)
+    }()
+
+    // Даем время на инициализацию
+    time.Sleep(100 * time.Millisecond)
+
+    // Проверяем эндпоинт
+    resp, err := http.Get("http://127.0.0.1:8081/api/health")
+    require.NoError(t, err)
+    assert.Equal(t, http.StatusOK, resp.StatusCode)
+    resp.Body.Close()
+
+    // Останавливаем
+    err = server.Shutdown(context.Background())
+    require.NoError(t, err)
+
+    // Ждём
+    <-started
+
+    // Проверяем моки
+    mockRepo.AssertExpectations(t)
+    mockSender.AssertExpectations(t)
 }
