@@ -49,7 +49,7 @@ func FileLoadConfig() FileConfig {
     flag.Parse()
     
     return FileConfig{
-        InputFile:       "services.json",
+        InputFile:       "services_old.json",
         OutputFile:      "filtered_services.json",
         Workers:         workers,
         BatchSize:       batchSize,
