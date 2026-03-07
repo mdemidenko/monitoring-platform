@@ -1,30 +1,37 @@
 package repository
 
 import (
-	"context"
-	"encoding/json"
+    "context"
+    "encoding/json"
+    "log"
+    "os"
 	"fmt"
-	"log"
-	"os"
 
-	"github.com/mdemidenko/monitoring-platform/internal/models"
+    "github.com/mdemidenko/monitoring-platform/internal/models"
+	"go.mongodb.org/mongo-driver/mongo"
+    "go.mongodb.org/mongo-driver/mongo/options"
 )
 
 type Repository interface {
-	GetServices(ctx context.Context) (<-chan models.Service, <-chan error)
-	SaveResults(ctx context.Context, results <-chan models.Result) <-chan error
+    GetServices(ctx context.Context) (<-chan models.Service, <-chan error)
+    SaveResults(ctx context.Context, results <-chan models.Result) <-chan error
 }
 
 type repository struct {
-	inputFile  string
-	outputFile string
+    inputFile    string
+    outputFile   string
+    mongoURI     string
+    dbName       string
+    collectionName string
 }
 
-func NewRepository(inputFile, outputFile string) Repository {
-	return &repository{
-		inputFile:  inputFile,
-		outputFile: outputFile,
-	}
+func NewRepository(inputFile, mongoURI, dbName, collectionName string) *repository {
+    return &repository{
+        inputFile:      inputFile,
+        mongoURI:       mongoURI,
+        dbName:         dbName,
+        collectionName: collectionName,
+    }
 }
 
 // GetServices читает сервисы и отправляет в канал
@@ -72,51 +79,57 @@ func (r *repository) GetServices(ctx context.Context) (<-chan models.Service, <-
 	return servicesChan, errChan
 }
 
-// SaveResults сохраняет результаты из канала в файл
+// SaveResults сохраняет результаты из канала в mongodb
 func (r *repository) SaveResults(ctx context.Context, results <-chan models.Result) <-chan error {
-	errChan := make(chan error, 1)
+    errChan := make(chan error, 1)
 
-	// Проверяем контекст СРАЗУ (синхронно)
-	if ctx.Err() != nil {
-		go func() {
-			defer close(errChan)
-			errChan <- ctx.Err()
-		}()
-		return errChan
-	}
+    if ctx.Err() != nil {
+        go func() {
+            defer close(errChan)
+            errChan <- ctx.Err()
+        }()
+        return errChan
+    }
 
-	go func() {
-		defer close(errChan)
+    go func() {
+        defer close(errChan)
 
-		var allResults []models.Result
-		
-		for {
-			select {
-			case <-ctx.Done():
-				// Пытаемся сохранить то, что успели собрать
-				if len(allResults) > 0 {
-					if err := r.saveToFile(allResults); err != nil {
-						errChan <- fmt.Errorf("ошибка сохранения при отмене: %w", err)
-						return
-					}
-				}
-				errChan <- ctx.Err()
-				return
-				
-			case result, ok := <-results:
-				if !ok {
-					// Канал закрыт, сохраняем все результаты
-					if err := r.saveToFile(allResults); err != nil {
-						errChan <- err
-					}
-					return
-				}
-				allResults = append(allResults, result)
-			}
-		}
-	}()
+        // Подключаемся к MongoDB
+        client, err := mongo.Connect(ctx, options.Client().ApplyURI(r.mongoURI))
+        if err != nil {
+            errChan <- err
+            return
+        }
+        defer client.Disconnect(ctx)
 
-	return errChan
+        collection := client.Database(r.dbName).Collection(r.collectionName)
+
+        // Собираем результаты
+        var docs []interface{}
+        for {
+            select {
+            case <-ctx.Done():
+                errChan <- ctx.Err()
+                return
+            case result, ok := <-results:
+                if !ok {
+                    // Канал закрыт — сохраняем всё
+                    if len(docs) > 0 {
+                        _, err := collection.InsertMany(ctx, docs)
+                        if err != nil {
+                            errChan <- err
+                            return
+                        }
+                    }
+                    log.Printf("✅ Сохранено %d результатов в MongoDB", len(docs))
+                    return
+                }
+                docs = append(docs, result)
+            }
+        }
+    }()
+
+    return errChan
 }
 
 // saveToFile - внутренний метод сохранения
