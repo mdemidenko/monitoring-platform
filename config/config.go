@@ -30,11 +30,14 @@ type ServerConfig struct {
 
 
 type FileConfig struct {
-    InputFile        string
-    OutputFile       string
-    Workers          int           // количество воркеров для параллельной обработки
-    BatchSize        int           // размер батча для обработки
-    ShutdownTimeout  time.Duration // время для graceful shutdown
+    InputFile       string        `yaml:"input_file"`
+    OutputFile      string        `yaml:"output_file"`
+    Workers         int           `yaml:"workers"`
+    BatchSize       int           `yaml:"batch_size"`
+    ShutdownTimeout time.Duration `yaml:"shutdown_timeout"`
+    MongoDBURI      string        `yaml:"mongodb_uri"`
+    DBName          string        `yaml:"db_name"`
+    CollectionName  string        `yaml:"collection_name"`
 }
 
 func FileLoadConfig() FileConfig {
@@ -81,6 +84,7 @@ type Config struct {
 	Logging  LoggingConfig  `yaml:"logging" json:"logging"`
 	Server   ServerConfig   `yaml:"server" json:"server"`
 	Auth     AuthConfig     `yaml:"auth" json:"auth"`
+	File     FileConfig     `yaml:"file" json:"file"`
 }
 
 // LoadConfig загружает конфигурацию из YAML файла
@@ -187,6 +191,31 @@ func (c *Config) Validate() error {
     }
     if c.Auth.Login == "" || c.Auth.Password == "" {
         return fmt.Errorf("auth.login and auth.password are required")
+    }
+	// Валидация FileConfig
+    if c.File.InputFile == "" {
+        return fmt.Errorf("file.input_file is required")
+    }
+    if c.File.OutputFile == "" {
+        return fmt.Errorf("file.output_file is required")
+    }
+    if c.File.Workers <= 0 {
+        c.File.Workers = 1
+    }
+    if c.File.BatchSize <= 0 {
+        c.File.BatchSize = 10
+    }
+    if c.File.ShutdownTimeout <= 0 {
+        c.File.ShutdownTimeout = 30 * time.Second
+    }
+    if c.File.MongoDBURI == "" {
+        return fmt.Errorf("file.mongodb_uri is required")
+    }
+    if c.File.DBName == "" {
+        c.File.DBName = "monitoring"
+    }
+    if c.File.CollectionName == "" {
+        c.File.CollectionName = "services"
     }
 
 	validEnvironments := map[string]bool{

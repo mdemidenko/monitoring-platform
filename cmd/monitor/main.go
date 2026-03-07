@@ -18,7 +18,11 @@ import (
 
 func main() {
     // Загружаем конфигурацию
-    cfg := config.FileLoadConfig()
+    appConfig, err := config.LoadConfig("")
+    if err != nil {
+        log.Fatalf("Не удалось загрузить конфиг: %v", err)
+    }
+    cfg := appConfig.File
     log.Printf("Конфигурация загружена: workers=%d, batch=%d, timeout=%v", 
         cfg.Workers, cfg.BatchSize, cfg.ShutdownTimeout)
 
