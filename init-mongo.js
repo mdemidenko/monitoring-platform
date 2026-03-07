@@ -2,12 +2,16 @@
 const DB_NAME = "monitoring";
 const COLLECTION_NAME = "services";
 const USERNAME = "monitoring_user";
-const PASSWORD = "monitoring_pass"; // ⚠️ В продакшене — через env/secrets!
+const PASSWORD = "monitoring_pass";
 
 // Подключаемся к БД
 db = db.getSiblingDB(DB_NAME);
 
-// === 1. Создаём коллекцию с валидацией (пустая) ===
+// === 1. Удаляем коллекцию, если существует (чтобы применить новую схему)
+db[COLLECTION_NAME].drop();
+print(`🗑️  Коллекция "${COLLECTION_NAME}" удалена (если существовала)`);
+
+// === 2. Создаём коллекцию с обновлённой схемой (включая double) ===
 db.createCollection(COLLECTION_NAME, {
   validator: {
     $jsonSchema: {
@@ -15,8 +19,8 @@ db.createCollection(COLLECTION_NAME, {
       required: ["id", "name", "tenant"],
       properties: {
         id: {
-          bsonType: ["int", "string"],
-          description: "ID сервиса — обязательный (число или строка)"
+          bsonType: ["int", "string", "double"], // ← добавили "double"
+          description: "ID сервиса — обязательный (целое число, строка или double)"
         },
         name: {
           bsonType: "string",
@@ -25,37 +29,45 @@ db.createCollection(COLLECTION_NAME, {
         tenant: {
           bsonType: "string",
           description: "Тенант — обязательный"
+        },
+        clusters: {
+          bsonType: "array",
+          description: "Список кластеров (опционально)",
+          items: {
+            bsonType: "string"
+          }
         }
       }
     }
   }
 });
 
-print(`✅ Коллекция "${COLLECTION_NAME}" создана (пустая) с валидацией схемы`);
+print(`✅ Коллекция "${COLLECTION_NAME}" создана с обновлённой схемой (поддержка double)`);
 
-// === 2. Создаём пользователя с правами readWrite ===
-db.createUser({
-  user: USERNAME,
-  pwd: PASSWORD,
-  roles: [
-    {
-      role: "readWrite",
-      db: DB_NAME
-    }
-  ]
-});
+// === 3. Создаём пользователя (если ещё не существует) ===
+if (!db.getUser(USERNAME)) {
+    db.createUser({
+        user: USERNAME,
+        pwd: PASSWORD,
+        roles: [
+            {
+                role: "readWrite",
+                db: DB_NAME
+            }
+        ]
+    });
+    print(`✅ Пользователь "${USERNAME}" создан`);
+} else {
+    print(`ℹ️  Пользователь "${USERNAME}" уже существует`);
+}
 
-print(`✅ Пользователь "${USERNAME}" создан с правами readWrite`);
-
-// === 3. Уникальный индекс по id ===
-db.services.createIndex({ "id": 1 }, { unique: true });
+// === 4. Создаём уникальный индекс по id ===
+db[COLLECTION_NAME].createIndex({ "id": 1 }, { unique: true });
 print("✅ Уникальный индекс по полю 'id' создан");
 
 // === Готово ===
 print("========================================");
-print("🎉 MongoDB успешно инициализирована!");
-print(`БД: ${DB_NAME}`);
-print(`Коллекция: ${COLLECTION_NAME} (пустая)`);
+print("🎉 Настройка MongoDB завершена!");
 print(`Подключайтесь как: mongodb://${USERNAME}:${PASSWORD}@localhost:27017/${DB_NAME}`);
-print("Ожидается, что Go-приложение загрузит данные из input.json при первом запуске.");
+print("Ожидается, что приложение загрузит данные из JSON и обогатит их.");
 print("========================================");

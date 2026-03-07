@@ -11,6 +11,7 @@ import (
     "fmt"
 
     "github.com/mdemidenko/monitoring-platform/config"
+    "github.com/mdemidenko/monitoring-platform/internal/client"
     "github.com/mdemidenko/monitoring-platform/internal/models"
     "github.com/mdemidenko/monitoring-platform/internal/monitor"
     "github.com/mdemidenko/monitoring-platform/internal/repository"
@@ -29,7 +30,7 @@ func main() {
     log.Printf("MongoDB: uri=%s, db=%s, collection=%s",
         cfg.MongoDBURI, cfg.DBName, cfg.CollectionName)
 
-    // Создаём репозиторий: читает из файла, пишет в MongoDB
+    // Создаём репозиторий для фильтрации: читает из файла, пишет в MongoDB
     repo := repository.NewRepository(
         cfg.InputFile,
         cfg.MongoDBURI,
@@ -55,20 +56,60 @@ func main() {
         log.Println("Принудительный выход!")
         os.Exit(1)
     }()
-    
-    // Передаём repo в monitor.Service
-    svc := monitor.New(repo)
 
-    // Запускаем обработку
+    // === ШАГ 0: Проверяем, пуста ли коллекция ===
+    // Подключаемся к MongoDB напрямую
+    mongoRepo, err := repository.NewMongoDBRepository(cfg.MongoDBURI, cfg.DBName, cfg.CollectionName)
+    if err != nil {
+        log.Fatalf("Не удалось подключиться к MongoDB : %v", err)
+    }
+
+    collection := mongoRepo.GetCollection()
+    log.Print(collection)
+    if collection == nil {
+        log.Fatal("❌ collection is nil — ошибка инициализации")
+    }
+
+    count, err := mongoRepo.GetCollection().CountDocuments(ctx, nil)
+    if err != nil {
+        log.Fatalf("Не удалось проверить коллекцию: %v", err)
+    }
+
+    if count == 0 {
+        log.Println("Коллекция пуста. Загружаем данные из JSON...")
+        if err := repository.LoadServicesFromJSON(ctx, mongoRepo.GetCollection(), cfg.InputFile); err != nil {
+            log.Fatalf("Ошибка загрузки данных: %v", err)
+        }
+    } else {
+        log.Printf("Коллекция уже содержит %d документов, пропускаем загрузку", count)
+    }
+
+    // === ШАГ 1: Фильтрация — сохраняем отфильтрованные сервисы в MongoDB ===
+    svc := monitor.New(repo)
     if err := processWithContext(ctx, svc, repo, cfg); err != nil {
-        log.Printf("Ошибка: %v", err)
+        log.Printf("Ошибка на этапе фильтрации: %v", err)
+        os.Exit(1)
+    }
+    log.Println("✅ Этап фильтрации завершён")
+
+    // === ШАГ 2: Обогащение — делаем запросы и обновляем кластеры ===
+
+    // Создаём HTTP-клиент
+    passportClient := client.NewPassportClient("https://smesre.tcsgroup.io/passport/v2")
+
+    // Создаём сервис для обогащения
+    enricher := monitor.NewEnricher(mongoRepo, passportClient, collection)
+
+    log.Println("Запуск обогащения кластерами...")
+    if err := enricher.EnrichServices(ctx, cfg.Workers); err != nil && err != context.Canceled {
+        log.Printf("Ошибка обогащения: %v", err)
         os.Exit(1)
     }
 
     log.Println("Приложение успешно завершено")
 }
 
-// processWithContext — остаётся почти без изменений
+// processWithContext — остаётся без изменений
 func processWithContext(ctx context.Context, svc monitor.Service, repo repository.Repository, cfg config.FileConfig) error {
     log.Println("Начало обработки...")
     startTime := time.Now()
@@ -101,7 +142,7 @@ func processWithContext(ctx context.Context, svc monitor.Service, repo repositor
         }
     }()
 
-    // Сохраняем результаты (в файл, как раньше)
+    // Сохраняем результаты (в MongoDB — реализовано в repo.SaveResults)
     saveErrChan := repo.SaveResults(ctx, collectedResults)
 
     // Ожидаем завершения и проверяем ошибки
@@ -122,7 +163,6 @@ func processWithContext(ctx context.Context, svc monitor.Service, repo repositor
     if procErr != nil && procErr != context.Canceled {
         return fmt.Errorf("ошибка обработки: %w", procErr)
     }
-
     if saveErr != nil && saveErr != context.Canceled {
         return fmt.Errorf("ошибка сохранения: %w", saveErr)
     }

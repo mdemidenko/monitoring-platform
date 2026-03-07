@@ -15,6 +15,7 @@ import (
 type Repository interface {
     GetServices(ctx context.Context) (<-chan models.Service, <-chan error)
     SaveResults(ctx context.Context, results <-chan models.Result) <-chan error
+    // GetCollection() *mongo.Collection
 }
 
 type repository struct {
