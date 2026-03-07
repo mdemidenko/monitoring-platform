@@ -1,0 +1,164 @@
+syntax = "proto3";
+
+package monitoring;
+
+option go_package = "github.com/mdemidenko/monitoring-platform/pkg/grpc";
+
+import "google/protobuf/empty.proto";
+
+// Единый сервис мониторинга
+service MonitoringService {
+  // Аутентификация
+  rpc Login(LoginRequest) returns (LoginResponse);
+  
+  // Notification методы (CRUD)
+  rpc CreateNotification(Notification) returns (NotificationResponse);
+  rpc GetNotification(GetNotificationRequest) returns (Notification);
+  rpc ListNotifications(google.protobuf.Empty) returns (NotificationList);
+  
+  // SentNotification методы (CRUD)
+  rpc CreateSentNotification(SentNotification) returns (SentNotificationResponse);
+  rpc GetSentNotification(GetSentNotificationRequest) returns (SentNotification);
+  rpc ListSentNotifications(google.protobuf.Empty) returns (SentNotificationList);
+  
+  // Service методы (CRUD)
+  rpc CreateService(Service) returns (ServiceResponse);
+  rpc GetService(GetServiceRequest) returns (Service);
+  rpc ListServices(google.protobuf.Empty) returns (ServiceList);
+  
+  // Result методы (CRUD)
+  rpc CreateResult(Result) returns (ResultResponse);
+  rpc GetResult(GetResultRequest) returns (Result);
+  rpc ListResults(google.protobuf.Empty) returns (ResultList);
+  
+  // Операции отправки уведомлений
+  rpc SendNotification(SendRequest) returns (SendResponse);
+  rpc BatchSend(BatchSendRequest) returns (BatchSendResponse);
+}
+
+// Сообщения для аутентификации
+message LoginRequest {
+  string username = 1;
+  string password = 2;
+}
+
+message LoginResponse {
+  string token = 1;
+  string expires_at = 2;
+  string token_type = 3;
+}
+
+// Notification сообщения
+message Notification {
+  string chat_id = 1;
+  string text = 2;
+}
+
+message NotificationResponse {
+  bool success = 1;
+  string message = 2;
+  Notification data = 3;
+}
+
+message GetNotificationRequest {
+  string chat_id = 1;
+}
+
+message NotificationList {
+  repeated Notification notifications = 1;
+  int32 count = 2;
+}
+
+// SentNotification сообщения
+message SentNotification {
+  int64 message_id = 1;
+  int64 chat_id = 2;
+}
+
+message SentNotificationResponse {
+  bool success = 1;
+  string message = 2;
+  SentNotification data = 3;
+}
+
+message GetSentNotificationRequest {
+  int64 message_id = 1;
+}
+
+message SentNotificationList {
+  repeated SentNotification sent_notifications = 1;
+  int32 count = 2;
+}
+
+// Service сообщения
+message Service {
+  int32 id = 1;
+  string name = 2;
+  string tenant = 3;
+  string deprecated_date = 4;
+  string business_line = 5;
+}
+
+message ServiceResponse {
+  bool success = 1;
+  string message = 2;
+  Service data = 3;
+}
+
+message GetServiceRequest {
+  int32 id = 1;
+}
+
+message ServiceList {
+  repeated Service services = 1;
+  int32 count = 2;
+}
+
+// Result сообщения
+message Result {
+  int32 id = 1;
+  string name = 2;
+  string tenant = 3;
+}
+
+message ResultResponse {
+  bool success = 1;
+  string message = 2;
+  Result data = 3;
+}
+
+message GetResultRequest {
+  int32 id = 1;
+}
+
+message ResultList {
+  repeated Result results = 1;
+  int32 count = 2;
+}
+
+// Сообщения для отправки уведомлений
+message SendRequest {
+  string chat_id = 1;
+  string text = 2;
+}
+
+message SendResponse {
+  bool success = 1;
+  string message = 2;
+  int64 message_id = 3;
+  string chat_id = 4;
+}
+
+message BatchSendRequest {
+  repeated SendRequest messages = 1;
+  int32 interval_ms = 2;
+  int32 workers = 3;
+}
+
+message BatchSendResponse {
+  bool success = 1;
+  string message = 2;
+  int32 total = 3;
+  int32 success_count = 4;
+  int32 error_count = 5;
+}

@@ -6,20 +6,55 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strconv"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
+type AuthConfig struct {
+    JWTSecret      string `yaml:"jwt_secret" json:"jwt_secret"`
+    JWTExpiration  int    `yaml:"jwt_expiration_hours" json:"jwt_expiration_hours"`
+    Login          string `yaml:"login" json:"login"`
+    Password       string `yaml:"password" json:"password"`
+}
+
+type ServerConfig struct {
+	Port           string   `yaml:"port" json:"port"`
+	Host           string   `yaml:"host" json:"host"`
+	Timeout        int      `yaml:"timeout" json:"timeout"`
+	GinMode        string   `yaml:"gin_mode" json:"gin_mode"`
+	EnableCORS     bool     `yaml:"enable_cors" json:"enable_cors"`
+	TrustedProxies []string `yaml:"trusted_proxies" json:"trusted_proxies"`
+	GRPCPort       string   `yaml:"grpc_port" json:"grpc_port"`
+}
+
 
 type FileConfig struct {
-	InputFile  string
-	OutputFile string
+    InputFile        string
+    OutputFile       string
+    Workers          int           // количество воркеров для параллельной обработки
+    BatchSize        int           // размер батча для обработки
+    ShutdownTimeout  time.Duration // время для graceful shutdown
 }
 
 func FileLoadConfig() FileConfig {
-	return FileConfig{
-		InputFile:  "services.json",
-		OutputFile: "filtered_services.json",
-	}
+    // Добавляем флаги командной строки
+    var workers int
+    var batchSize int
+    var shutdownTimeout int
+    
+    flag.IntVar(&workers, "workers", 1, "количество воркеров для параллельной обработки")
+    flag.IntVar(&batchSize, "batch", 10, "размер батча обработки")
+    flag.IntVar(&shutdownTimeout, "timeout", 30, "таймаут graceful shutdown в секундах")
+    flag.Parse()
+    
+    return FileConfig{
+        InputFile:       "services_old.json",
+        OutputFile:      "filtered_services.json",
+        Workers:         workers,
+        BatchSize:       batchSize,
+        ShutdownTimeout: time.Duration(shutdownTimeout) * time.Second,
+    }
 }
 
 type TelegramConfig struct {
@@ -44,6 +79,8 @@ type Config struct {
 	Telegram TelegramConfig `yaml:"telegram" json:"telegram"`
 	App      AppConfig      `yaml:"app" json:"app"`
 	Logging  LoggingConfig  `yaml:"logging" json:"logging"`
+	Server   ServerConfig   `yaml:"server" json:"server"`
+	Auth     AuthConfig     `yaml:"auth" json:"auth"`
 }
 
 // LoadConfig загружает конфигурацию из YAML файла
@@ -110,6 +147,21 @@ func DefaultConfig() *Config {
 			Level:  "info",
 			Format: "text",
 		},
+		Server: ServerConfig{
+			Port:           "8080",
+			Host:           "localhost",
+			Timeout:        30,
+			GinMode:        "debug",
+			EnableCORS:     true,
+			TrustedProxies: []string{"127.0.0.1"},
+			GRPCPort:       "9090",
+		},
+		Auth: AuthConfig{
+            JWTSecret:      "your-default-secret-key-change-this",
+            JWTExpiration:  24,
+            Login:          "admin",
+            Password:       "admin123",
+        },
 	}
 }
 
@@ -124,6 +176,18 @@ func (c *Config) Validate() error {
 	if c.Telegram.Timeout <= 0 {
 		return fmt.Errorf("telegram.timeout must be positive")
 	}
+	if c.Server.Port == "" {
+		c.Server.Port = "8080"
+	}
+	if c.Auth.JWTSecret == "" {
+        return fmt.Errorf("auth.jwt_secret is required")
+    }
+    if c.Auth.JWTExpiration <= 0 {
+        return fmt.Errorf("auth.jwt_expiration_hours must be positive")
+    }
+    if c.Auth.Login == "" || c.Auth.Password == "" {
+        return fmt.Errorf("auth.login and auth.password are required")
+    }
 
 	validEnvironments := map[string]bool{
 		"development": true,
@@ -158,6 +222,21 @@ func (c *Config) overrideFromEnv() {
 	if debug := os.Getenv("TELEGRAM_DEBUG"); debug != "" {
 		c.Telegram.Debug = debug == "true" || debug == "1"
 	}
+	// JWT и аутентификация
+    if jwtSecret := os.Getenv("AUTH_JWT_SECRET"); jwtSecret != "" {
+        c.Auth.JWTSecret = jwtSecret
+    }
+    if jwtExp := os.Getenv("AUTH_JWT_EXPIRATION_HOURS"); jwtExp != "" {
+        if exp, err := strconv.Atoi(jwtExp); err == nil && exp > 0 {
+            c.Auth.JWTExpiration = exp
+        }
+    }
+    if login := os.Getenv("AUTH_LOGIN"); login != "" {
+        c.Auth.Login = login
+    }
+    if password := os.Getenv("AUTH_PASSWORD"); password != "" {
+        c.Auth.Password = password
+    }
 }
 
 // findConfigFile ищет конфигурационный файл в стандартных местах
