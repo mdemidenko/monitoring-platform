@@ -38,7 +38,11 @@ func main() {
 	if err != nil {
 		log.Fatalf("❌ Не удалось подключиться к серверу: %v", err)
 	}
-	defer conn.Close()
+	defer func() {
+    if err := conn.Close(); err != nil {
+        log.Printf("Failed to close connection: %v", err)
+    }
+	}()
 
 	// Создаем клиент
 	client := monitoringGrpc.NewMonitoringServiceClient(conn)

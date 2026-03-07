@@ -5,12 +5,12 @@ import (
 	"log"
 	"net/http"
 	"time"
+	"net"
 
 	"github.com/gin-gonic/gin"
 	"github.com/mdemidenko/monitoring-platform/config"
+	"github.com/mdemidenko/monitoring-platform/internal/domain"
 	"github.com/mdemidenko/monitoring-platform/internal/middleware"
-	"github.com/mdemidenko/monitoring-platform/internal/notifier"
-	"github.com/mdemidenko/monitoring-platform/internal/repository"
 	swaggerFiles "github.com/swaggo/files"
 	ginSwagger "github.com/swaggo/gin-swagger"
 )
@@ -23,7 +23,7 @@ type Server struct {
 }
 
 // NewServer создает новый сервер с Gin
-func NewServer(telegramService *notifier.TelegramService, storage *repository.MemoryStorage, cfg *config.Config) *Server {
+func NewServer(service domain.NotificationService, cfg *config.Config) *Server  {
 	// Устанавливаем режим Gin
 	setGinMode(cfg)
 	
@@ -31,7 +31,7 @@ func NewServer(telegramService *notifier.TelegramService, storage *repository.Me
 	router := gin.New()
 	
 	// Создаем обработчик
-	handler := NewHandler(telegramService, storage, cfg)
+	handler := NewHandler(service, cfg)
 	
 	server := &Server{
 		router:  router,
@@ -183,10 +183,14 @@ func (s *Server) setupRoutes() {
 
 // Start запускает сервер
 func (s *Server) Start(port string) {
-	addr := ":" + port
-	if s.cfg.Server.Host != "" && s.cfg.Server.Host != "localhost" {
-		addr = s.cfg.Server.Host + ":" + port
-	}
+	  // Определяем хост
+    host := s.cfg.Server.Host
+    if host == "" || host == "localhost" {
+        host = "127.0.0.1"
+    }
+    
+    // Собираем адрес
+    addr := net.JoinHostPort(host, port)
 	
 	s.httpServer = &http.Server{
 		Addr:           addr,
@@ -220,4 +224,9 @@ func (s *Server) Shutdown(ctx context.Context) error {
 		return s.httpServer.Shutdown(ctx)
 	}
 	return nil
+}
+
+// HttpServer возвращает внутренний HTTP-сервер (для тестов)
+func (s *Server) HttpServer() *http.Server {
+    return s.httpServer
 }

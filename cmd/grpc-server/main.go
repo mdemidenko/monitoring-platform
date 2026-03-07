@@ -9,14 +9,16 @@ import (
 	"time"
 
 	"github.com/mdemidenko/monitoring-platform/config"
+	"github.com/mdemidenko/monitoring-platform/internal/adapters"
+	"github.com/mdemidenko/monitoring-platform/internal/core"
 	"github.com/mdemidenko/monitoring-platform/internal/grpc"
 	"github.com/mdemidenko/monitoring-platform/internal/logger"
-	"github.com/mdemidenko/monitoring-platform/internal/notifier"
 	"github.com/mdemidenko/monitoring-platform/internal/repository"
+	_ "github.com/mdemidenko/monitoring-platform/docs"
 )
 
 func main() {
-	// Создаем контекст с возможностью отмены
+// Создаем контекст с возможностью отмены
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -26,30 +28,35 @@ func main() {
 		log.Fatal(err)
 	}
 
-	log.Printf("🚀 Запуск gRPC сервера для %s v%s", cfg.App.Name, cfg.App.Version)
-
-	// Создаем репозиторий для слайсов
+	// 1. Создаем хранилище
 	storage := repository.NewMemoryStorage()
 
-	// Создаем и запускаем логгер хранилища с контекстом
+	// 2. Создаем и запускаем логгер хранилища
 	storageLogger := logger.NewStorageLogger(storage, 200*time.Millisecond)
 	storageLogger.Start(ctx)
 
-	// Создаем сервис Telegram
-	telegramService := notifier.NewTelegramService(cfg, storage)
+	// 3. Создаем адаптеры
+	telegramAdapter := adapters.NewTelegramAdapter(&cfg.Telegram, log.Default())
+	repositoryAdapter := adapters.NewMemoryStorageAdapter(storage, log.Default())
 
-	// Проверяем здоровье бота
-	if err := telegramService.HealthCheck(); err != nil {
+	// 4. Создаем сервис ядра с бизнес-логикой
+	notificationService := core.NewNotificationService(
+		repositoryAdapter,
+		telegramAdapter,
+		log.Default(),
+	)
+
+	// 5. Проверяем здоровье сервиса отправки
+	if err := notificationService.HealthCheck(); err != nil {
 		log.Fatal(err)
 	}
 
-	// Создаем gRPC сервер
-	grpcServer, err := grpc.NewGRPCServer(cfg, telegramService, storage)
+	// 6. Запускаем gRPC сервер в отдельной горутине
+	grpcServer, err := grpc.NewGRPCServer(cfg, notificationService)
 	if err != nil {
 		log.Fatalf("❌ Не удалось создать gRPC сервер: %v", err)
 	}
 	
-	// Запускаем gRPC сервер в отдельной горутине
 	go func() {
 		grpcPort := cfg.Server.GRPCPort
 		if grpcPort == "" {
