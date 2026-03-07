@@ -15,6 +15,7 @@ import (
     "github.com/mdemidenko/monitoring-platform/internal/models"
     "github.com/mdemidenko/monitoring-platform/internal/monitor"
     "github.com/mdemidenko/monitoring-platform/internal/repository"
+    "go.mongodb.org/mongo-driver/bson"
 )
 
 func main() {
@@ -57,7 +58,7 @@ func main() {
         os.Exit(1)
     }()
 
-    // === ШАГ 0: Проверяем, пуста ли коллекция ===
+    // === ШАГ 0: Проверяем, пустая ли коллекция ===
     // Подключаемся к MongoDB напрямую
     mongoRepo, err := repository.NewMongoDBRepository(cfg.MongoDBURI, cfg.DBName, cfg.CollectionName)
     if err != nil {
@@ -70,9 +71,10 @@ func main() {
         log.Fatal("❌ collection is nil — ошибка инициализации")
     }
 
-    count, err := mongoRepo.GetCollection().CountDocuments(ctx, nil)
+    count, err := mongoRepo.GetCollection().CountDocuments(ctx, bson.M{})
     if err != nil {
-        log.Fatalf("Не удалось проверить коллекцию: %v", err)
+        log.Printf("❌ Оригинальная ошибка: %+v", err)
+        log.Fatalf("Не удалось выполнить CountDocuments")
     }
 
     if count == 0 {

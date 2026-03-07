@@ -7,11 +7,8 @@ const PASSWORD = "monitoring_pass";
 // Подключаемся к БД
 db = db.getSiblingDB(DB_NAME);
 
-// === 1. Удаляем коллекцию, если существует (чтобы применить новую схему)
-db[COLLECTION_NAME].drop();
-print(`🗑️  Коллекция "${COLLECTION_NAME}" удалена (если существовала)`);
 
-// === 2. Создаём коллекцию с обновлённой схемой (включая double) ===
+// === 1. Создаём коллекцию с обновлённой схемой (включая double) ===
 db.createCollection(COLLECTION_NAME, {
   validator: {
     $jsonSchema: {
@@ -44,7 +41,7 @@ db.createCollection(COLLECTION_NAME, {
 
 print(`✅ Коллекция "${COLLECTION_NAME}" создана с обновлённой схемой (поддержка double)`);
 
-// === 3. Создаём пользователя (если ещё не существует) ===
+// === 2. Создаём пользователя (если ещё не существует) ===
 if (!db.getUser(USERNAME)) {
     db.createUser({
         user: USERNAME,
@@ -61,7 +58,7 @@ if (!db.getUser(USERNAME)) {
     print(`ℹ️  Пользователь "${USERNAME}" уже существует`);
 }
 
-// === 4. Создаём уникальный индекс по id ===
+// === 3. Создаём уникальный индекс по id ===
 db[COLLECTION_NAME].createIndex({ "id": 1 }, { unique: true });
 print("✅ Уникальный индекс по полю 'id' создан");
 
