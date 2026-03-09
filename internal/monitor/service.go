@@ -2,104 +2,21 @@ package monitor
 
 import (
     "context"
+    "log"
     "sync"
     "fmt"
-    "log"
 
     "github.com/mdemidenko/monitoring-platform/internal/client"
     "github.com/mdemidenko/monitoring-platform/internal/models"
     "github.com/mdemidenko/monitoring-platform/internal/repository"
-    "go.mongodb.org/mongo-driver/mongo"
     "go.mongodb.org/mongo-driver/bson"
+    "go.mongodb.org/mongo-driver/mongo"
 )
 
-type Service interface {
-    FilterServices(ctx context.Context, workers int) (<-chan models.Result, <-chan error)
-    FilterServicesBatch(ctx context.Context, workers int) (<-chan models.Result, <-chan error)
-}
-
-const (
-    TargetDeprecatedDate = "0001-01-01T00:00:00Z"
-    TargetBusinessLine   = "Управление разработки решений для бизнеса и Центр оптимизации процессов поставки"
-)
-
-type service struct {
-    repo repository.Repository
-}
-
-func New(repo repository.Repository) Service {
-    return &service{repo: repo}
-}
-
-// FilterServicesBatch - основная функция с конкурентной обработкой
-func (s *service) FilterServicesBatch(ctx context.Context, workers int) (<-chan models.Result, <-chan error) {
-    // Получаем сервисы из репозитория
-    servicesChan, readErrChan := s.repo.GetServices(ctx)
-    
-    resultsChan := make(chan models.Result, 100)
-    procErrChan := make(chan error, 1)
-    
-    var wg sync.WaitGroup
-    
-    // Запускаем worker'ов
-    for i := 0; i < workers; i++ {
-        wg.Add(1)
-        go func(workerID int) {
-            defer wg.Done()
-            
-            for svc := range servicesChan {
-                select {
-                case <-ctx.Done():
-                    return
-                default:
-                    if svc.DeprecatedDate == TargetDeprecatedDate && 
-                       svc.BusinessLine == TargetBusinessLine {
-                        result := models.Result{
-                            ID:     svc.ID,
-                            Name:   svc.Name,
-                            Tenant: svc.Tenant,
-                        }
-                        
-                        select {
-                        case <-ctx.Done():
-                            return
-                        case resultsChan <- result:
-                        }
-                    }
-                }
-            }
-        }(i)
-    }
-    
-    // Горутина для координации завершения
-    go func() {
-        wg.Wait()
-        close(resultsChan)
-        
-        // Проверяем ошибки чтения
-        select {
-        case err := <-readErrChan:
-            if err != nil && err != context.Canceled {
-                procErrChan <- err
-            }
-        default:
-        }
-        close(procErrChan)
-    }()
-    
-    return resultsChan, procErrChan
-}
-
-// FilterServices - алиас для обратной совместимости
-func (s *service) FilterServices(ctx context.Context, workers int) (<-chan models.Result, <-chan error) {
-    return s.FilterServicesBatch(ctx, workers)
-}
-
-// Служба обогащения
 type Enricher struct {
-    repo       repository.Repository // для GetServices (из MongoDB)
+    repo       repository.Repository
     passport   *client.PassportClient
-    collection *mongo.Collection // для UpdateOne
+    collection *mongo.Collection
 }
 
 func NewEnricher(repo repository.Repository, passport *client.PassportClient, collection *mongo.Collection) *Enricher {
@@ -112,9 +29,7 @@ func NewEnricher(repo repository.Repository, passport *client.PassportClient, co
 
 func (e *Enricher) EnrichServices(ctx context.Context, workers int) error {
     log.Println("🔄 Начало работы EnrichServices")
-
-    errChan := make(chan error, 1)
-
+    errChan := make(chan error, 1) // буферизован
     go func() {
         defer close(errChan)
         log.Println("✅ Горутина запущена")
@@ -135,6 +50,12 @@ func (e *Enricher) EnrichServices(ctx context.Context, workers int) error {
                 for svc := range jobChan {
                     log.Printf("📥 Воркер %d получил сервис: id=%v, name=%s", workerID, svc.ID, svc.Name)
 
+                    // 🔍 Пропускаем, если уже есть clusters
+                    if len(svc.Clusters) > 0 {
+                        log.Printf("⏭️  Уже обогащён: %s/%s → clusters=%v", svc.Tenant, svc.Name, svc.Clusters)
+                        continue
+                    }
+
                     select {
                     case <-ctx.Done():
                         log.Printf("🛑 Воркер %d: контекст отменён", workerID)
@@ -152,10 +73,9 @@ func (e *Enricher) EnrichServices(ctx context.Context, workers int) error {
                         }
                         continue
                     }
-
                     log.Printf("📩 Получено релизов: %d", len(releases))
 
-                    // Ищем FINISHED
+                    // Ищем первый FINISHED релиз
                     var latestFinished *client.ReleaseInfo
                     for _, r := range releases {
                         if r.Status == "FINISHED" {
@@ -168,7 +88,11 @@ func (e *Enricher) EnrichServices(ctx context.Context, workers int) error {
                         log.Printf("✅ Найден FINISHED релиз: id=%d, clusters=%v", latestFinished.ID, latestFinished.Clusters)
 
                         filter := bson.M{"id": svc.ID}
-                        update := bson.M{"$set": bson.M{"clusters": latestFinished.Clusters}}
+                        clusters := latestFinished.Clusters
+                        if clusters == nil {
+                            clusters = []string{}
+                        }
+                        update := bson.M{"$set": bson.M{"clusters": clusters}}
 
                         result, err := e.collection.UpdateOne(ctx, filter, update)
                         if err != nil {
@@ -183,13 +107,12 @@ func (e *Enricher) EnrichServices(ctx context.Context, workers int) error {
                         if result.MatchedCount == 0 {
                             log.Printf("⚠️  Не найден сервис в MongoDB: id=%v", svc.ID)
                         } else {
-                            log.Printf("💾 Обновлено: %s/%s → clusters=%v", svc.Tenant, svc.Name, latestFinished.Clusters)
+                            log.Printf("💾 Обновлено: %s/%s → clusters=%v", svc.Tenant, svc.Name, clusters)
                         }
                     } else {
                         log.Printf("🟡 Нет завершённых релизов для %s/%s", svc.Tenant, svc.Name)
                     }
                 }
-
                 log.Printf("🔚 Воркер %d завершил обработку jobChan", workerID)
             }(i)
         }
@@ -216,7 +139,6 @@ func (e *Enricher) EnrichServices(ctx context.Context, workers int) error {
                         return
                     }
                     log.Printf("📤 Отправляем сервис в jobChan: id=%v, name=%s", svc.ID, svc.Name)
-
                     select {
                     case <-ctx.Done():
                         log.Println("🛑 Контекст отменён, прекращаем отправку")
@@ -232,9 +154,14 @@ func (e *Enricher) EnrichServices(ctx context.Context, workers int) error {
         go func() {
             wg.Wait()
             log.Println("✅ Все воркеры завершили работу")
+            // ✅ Отправляем nil — означает "всё хорошо"
+            select {
+            case errChan <- nil:
+            case <-ctx.Done():
+            }
         }()
 
-        // Ждём завершения или отмены
+        // Ожидаем отмену контекста ИЛИ успешное завершение
         select {
         case <-ctx.Done():
             log.Printf("🛑 Контекст отменён: %v", ctx.Err())
@@ -242,13 +169,13 @@ func (e *Enricher) EnrichServices(ctx context.Context, workers int) error {
         }
     }()
 
-    // Блокируем и читаем первую ошибку
-    log.Println("⏳ Ожидание результата из errChan...")
-    if err := <-errChan; err != nil && err != context.Canceled {
+    // Блокируем и ждём сигнал от горутины
+    log.Println("⏳ Ожидание завершения обогащения...")
+    err := <-errChan
+    if err != nil && err != context.Canceled {
         log.Printf("❌ Ошибка в EnrichServices: %v", err)
         return err
     }
-
     log.Println("✅ EnrichServices завершён успешно")
     return nil
 }

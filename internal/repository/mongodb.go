@@ -7,6 +7,7 @@ import (
     "github.com/mdemidenko/monitoring-platform/internal/models"
     "go.mongodb.org/mongo-driver/mongo"
     "go.mongodb.org/mongo-driver/mongo/options"
+    "go.mongodb.org/mongo-driver/bson"
 )
 
 var _ Repository = (*MongoDBRepository)(nil)
@@ -76,26 +77,29 @@ func (r *MongoDBRepository) GetServices(ctx context.Context) (<-chan models.Serv
         defer close(servicesChan)
         defer close(errChan)
 
-        cursor, err := r.collection.Find(ctx, nil)
+        cursor, err := r.collection.Find(ctx, bson.M{})
         if err != nil {
             errChan <- err
             return
         }
         defer cursor.Close(ctx)
 
-        var services []models.Service
-        if err := cursor.All(ctx, &services); err != nil {
-            errChan <- err // ❌ Не заменяй на "document is nil"
-            return
-        }
-
-        for _, svc := range services {
+        for cursor.Next(ctx) {
+            var svc models.Service
+            if err := cursor.Decode(&svc); err != nil {
+                log.Printf("⚠️  Пропускаем документ: %v", err)
+                continue
+            }
             select {
             case <-ctx.Done():
                 errChan <- ctx.Err()
                 return
             case servicesChan <- svc:
             }
+        }
+
+        if err := cursor.Err(); err != nil {
+            errChan <- err
         }
     }()
 

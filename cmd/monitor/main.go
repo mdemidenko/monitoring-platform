@@ -5,20 +5,19 @@ import (
     "log"
     "os"
     "os/signal"
-    "sync/atomic"
     "syscall"
-    "time"
-    "fmt"
 
     "github.com/mdemidenko/monitoring-platform/config"
     "github.com/mdemidenko/monitoring-platform/internal/client"
-    "github.com/mdemidenko/monitoring-platform/internal/models"
     "github.com/mdemidenko/monitoring-platform/internal/monitor"
     "github.com/mdemidenko/monitoring-platform/internal/repository"
-    "go.mongodb.org/mongo-driver/bson"
+    "github.com/mdemidenko/monitoring-platform/internal/loader"
 )
 
 func main() {
+    // Устанавливаем формат логов: дата, время с микросекундами, файл:строка
+    log.SetFlags(log.LstdFlags)
+
     // Загружаем конфигурацию
     appConfig, err := config.LoadConfig("")
     if err != nil {
@@ -30,14 +29,6 @@ func main() {
         cfg.Workers, cfg.BatchSize, cfg.ShutdownTimeout)
     log.Printf("MongoDB: uri=%s, db=%s, collection=%s",
         cfg.MongoDBURI, cfg.DBName, cfg.CollectionName)
-
-    // Создаём репозиторий для фильтрации: читает из файла, пишет в MongoDB
-    repo := repository.NewRepository(
-        cfg.InputFile,
-        cfg.MongoDBURI,
-        cfg.DBName,
-        cfg.CollectionName,
-    )
 
     // Создаем контекст с graceful shutdown
     ctx, cancel := context.WithCancel(context.Background())
@@ -58,128 +49,35 @@ func main() {
         os.Exit(1)
     }()
 
-    // === ШАГ 0: Проверяем, пустая ли коллекция ===
-    // Подключаемся к MongoDB напрямую
+    // === ШАГ 1: Подключаемся к MongoDB ===
     mongoRepo, err := repository.NewMongoDBRepository(cfg.MongoDBURI, cfg.DBName, cfg.CollectionName)
     if err != nil {
-        log.Fatalf("Не удалось подключиться к MongoDB : %v", err)
+        log.Fatalf("Не удалось подключиться к MongoDB: %v", err)
     }
-
     collection := mongoRepo.GetCollection()
-    log.Print(collection)
-    if collection == nil {
-        log.Fatal("❌ collection is nil — ошибка инициализации")
-    }
 
-    count, err := mongoRepo.GetCollection().CountDocuments(ctx, bson.M{})
+    // === ШАГ 2: Загрузка, фильтрация и сохранение ===
+    log.Println("🔄 Загрузка и фильтрация сервисов...")
+    processedCount, err := loader.LoadAndFilterServices(ctx, collection, cfg.InputFile)
     if err != nil {
-        log.Printf("❌ Оригинальная ошибка: %+v", err)
-        log.Fatalf("Не удалось выполнить CountDocuments")
+        log.Fatalf("Ошибка загрузки с фильтрацией: %v", err)
     }
+    log.Printf("✅ Отфильтровано и загружено: %d сервисов", processedCount)
 
-    if count == 0 {
-        log.Println("Коллекция пуста. Загружаем данные из JSON...")
-        if err := repository.LoadServicesFromJSON(ctx, mongoRepo.GetCollection(), cfg.InputFile); err != nil {
-            log.Fatalf("Ошибка загрузки данных: %v", err)
-        }
-    } else {
-        log.Printf("Коллекция уже содержит %d документов, пропускаем загрузку", count)
-    }
+    // === ШАГ 3: Обогащение — делаем запросы и обновляем кластеры ===
+    log.Println("🚀 Запуск обогащения кластерами...")
 
-    // === ШАГ 1: Фильтрация — сохраняем отфильтрованные сервисы в MongoDB ===
-    svc := monitor.New(repo)
-    if err := processWithContext(ctx, svc, repo, cfg); err != nil {
-        log.Printf("Ошибка на этапе фильтрации: %v", err)
-        os.Exit(1)
-    }
-    log.Println("✅ Этап фильтрации завершён")
-
-    // === ШАГ 2: Обогащение — делаем запросы и обновляем кластеры ===
-
-    // Создаём HTTP-клиент
+    // Создаём HTTP-клиент для внешней системы
     passportClient := client.NewPassportClient("https://smesre.tcsgroup.io/passport/v2")
 
     // Создаём сервис для обогащения
     enricher := monitor.NewEnricher(mongoRepo, passportClient, collection)
 
-    log.Println("Запуск обогащения кластерами...")
+    // Запускаем обогащение
     if err := enricher.EnrichServices(ctx, cfg.Workers); err != nil && err != context.Canceled {
         log.Printf("Ошибка обогащения: %v", err)
         os.Exit(1)
     }
 
-    log.Println("Приложение успешно завершено")
-}
-
-// processWithContext — остаётся без изменений
-func processWithContext(ctx context.Context, svc monitor.Service, repo repository.Repository, cfg config.FileConfig) error {
-    log.Println("Начало обработки...")
-    startTime := time.Now()
-
-    // Создаем каналы для конвейера
-    resultsChan, procErrChan := svc.FilterServicesBatch(ctx, cfg.Workers)
-
-    // Счетчик обработанных результатов
-    var resultCount int32
-
-    // Канал для сбора результатов
-    collectedResults := make(chan models.Result, 100)
-
-    // Горутина для сбора и подсчета результатов
-    go func() {
-        defer close(collectedResults)
-        for result := range resultsChan {
-            atomic.AddInt32(&resultCount, 1)
-
-            // Выводим прогресс каждые 10 записей
-            if atomic.LoadInt32(&resultCount)%10 == 0 {
-                log.Printf("Обработано: %d записей", atomic.LoadInt32(&resultCount))
-            }
-
-            select {
-            case <-ctx.Done():
-                return
-            case collectedResults <- result:
-            }
-        }
-    }()
-
-    // Сохраняем результаты (в MongoDB — реализовано в repo.SaveResults)
-    saveErrChan := repo.SaveResults(ctx, collectedResults)
-
-    // Ожидаем завершения и проверяем ошибки
-    var saveErr, procErr error
-
-    select {
-    case saveErr = <-saveErrChan:
-    case <-ctx.Done():
-        return ctx.Err()
-    }
-
-    select {
-    case procErr = <-procErrChan:
-    default:
-    }
-
-    // Обрабатываем ошибки
-    if procErr != nil && procErr != context.Canceled {
-        return fmt.Errorf("ошибка обработки: %w", procErr)
-    }
-    if saveErr != nil && saveErr != context.Canceled {
-        return fmt.Errorf("ошибка сохранения: %w", saveErr)
-    }
-
-    // Выводим итоговую статистику
-    finalCount := atomic.LoadInt32(&resultCount)
-    elapsed := time.Since(startTime)
-
-    log.Printf("========================================")
-    log.Printf("ОБРАБОТКА ЗАВЕРШЕНА")
-    log.Printf("Всего времени: %v", elapsed)
-    log.Printf("Найдено подходящих сервисов: %d", finalCount)
-    log.Printf("Скорость обработки: %.2f записей/сек",
-        float64(finalCount)/elapsed.Seconds())
-    log.Printf("========================================")
-
-    return nil
+    log.Println("✅ Приложение успешно завершено")
 }
