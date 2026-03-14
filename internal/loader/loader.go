@@ -25,7 +25,11 @@ func getExistingIDs(ctx context.Context, collection *mongo.Collection) (map[inte
     if err != nil {
         return nil, err
     }
-    defer cursor.Close(ctx)
+    defer func() {
+    if err := cursor.Close(ctx); err != nil {
+        log.Printf("Failed to close cursor: %v", err)
+    }
+    }()
 
     existing := make(map[interface{}]bool)
 

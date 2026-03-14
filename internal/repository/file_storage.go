@@ -20,7 +20,6 @@ type Repository interface {
 
 type repository struct {
     inputFile    string
-    outputFile   string
     mongoURI     string
     dbName       string
     collectionName string
@@ -101,7 +100,11 @@ func (r *repository) SaveResults(ctx context.Context, results <-chan models.Resu
             errChan <- err
             return
         }
-        defer client.Disconnect(ctx)
+        defer func() {
+            if err := client.Disconnect(ctx); err != nil {
+            log.Printf("Failed to disconnect MongoDB client: %v", err)
+            }
+        }()
 
         collection := client.Database(r.dbName).Collection(r.collectionName)
 
@@ -133,27 +136,27 @@ func (r *repository) SaveResults(ctx context.Context, results <-chan models.Resu
     return errChan
 }
 
-// saveToFile - внутренний метод сохранения
-func (r *repository) saveToFile(results []models.Result) error {
-    if len(results) == 0 {
-        return nil
-    }
+// // saveToFile - внутренний метод сохранения
+// func (r *repository) saveToFile(results []models.Result) error {
+//     if len(results) == 0 {
+//         return nil
+//     }
     
-    file, err := os.Create(r.outputFile)
-    if err != nil {
-        return fmt.Errorf("ошибка создания файла: %w", err)
-    }
-    defer func() {
-        if closeErr := file.Close(); closeErr != nil {
-            log.Printf("Ошибка при закрытии файла %s: %v", r.outputFile, closeErr)
-        }
-    }()
+//     file, err := os.Create(r.outputFile)
+//     if err != nil {
+//         return fmt.Errorf("ошибка создания файла: %w", err)
+//     }
+//     defer func() {
+//         if closeErr := file.Close(); closeErr != nil {
+//             log.Printf("Ошибка при закрытии файла %s: %v", r.outputFile, closeErr)
+//         }
+//     }()
 
-    encoder := json.NewEncoder(file)
-    encoder.SetIndent("", "  ")
-    if err := encoder.Encode(results); err != nil {
-        return fmt.Errorf("ошибка записи JSON: %w", err)
-    }
+//     encoder := json.NewEncoder(file)
+//     encoder.SetIndent("", "  ")
+//     if err := encoder.Encode(results); err != nil {
+//         return fmt.Errorf("ошибка записи JSON: %w", err)
+//     }
     
-    return nil
-}
+//     return nil
+// }

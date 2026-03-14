@@ -4,22 +4,33 @@ import (
     "context"
     "log"
     "sync"
-    "fmt"
 
     "github.com/mdemidenko/monitoring-platform/internal/client"
     "github.com/mdemidenko/monitoring-platform/internal/models"
     "github.com/mdemidenko/monitoring-platform/internal/repository"
     "go.mongodb.org/mongo-driver/bson"
     "go.mongodb.org/mongo-driver/mongo"
+    "go.mongodb.org/mongo-driver/mongo/options"
 )
 
-type Enricher struct {
-    repo       repository.Repository
-    passport   *client.PassportClient
-    collection *mongo.Collection
+// === Интерфейсы для внедрения зависимостей ===
+type PassportClient interface {
+    GetLatestReleases(ctx context.Context, tenant, service string) ([]client.ReleaseInfo, error)
 }
 
-func NewEnricher(repo repository.Repository, passport *client.PassportClient, collection *mongo.Collection) *Enricher {
+type MongoCollection interface {
+    UpdateOne(ctx context.Context, filter, update interface{}, opts ...*options.UpdateOptions) (*mongo.UpdateResult, error)
+}
+
+// === Enricher ===
+type Enricher struct {
+    repo       repository.Repository
+    passport   PassportClient
+    collection MongoCollection
+}
+
+// NewEnricher создаёт новый обогатитель
+func NewEnricher(repo repository.Repository, passport PassportClient, collection MongoCollection) *Enricher {
     return &Enricher{
         repo:       repo,
         passport:   passport,
@@ -27,16 +38,15 @@ func NewEnricher(repo repository.Repository, passport *client.PassportClient, co
     }
 }
 
+// EnrichServices обогащает сервисы кластерами из последнего FINISHED релиза
 func (e *Enricher) EnrichServices(ctx context.Context, workers int) error {
     log.Println("🔄 Начало работы EnrichServices")
-    errChan := make(chan error, 1) // буферизован
+    errChan := make(chan error, 1)
     go func() {
         defer close(errChan)
         log.Println("✅ Горутина запущена")
-
         servicesChan, repoErrChan := e.repo.GetServices(ctx)
         log.Println("📥 Получены каналы: servicesChan, repoErrChan")
-
         jobChan := make(chan models.Service, workers)
         var wg sync.WaitGroup
 
@@ -46,7 +56,6 @@ func (e *Enricher) EnrichServices(ctx context.Context, workers int) error {
             go func(workerID int) {
                 defer wg.Done()
                 log.Printf("👷 Воркер %d запущен", workerID)
-
                 for svc := range jobChan {
                     log.Printf("📥 Воркер %d получил сервис: id=%v, name=%s", workerID, svc.ID, svc.Name)
 
@@ -68,7 +77,7 @@ func (e *Enricher) EnrichServices(ctx context.Context, workers int) error {
                     if err != nil {
                         log.Printf("❌ Ошибка API для %s/%s: %v", svc.Tenant, svc.Name, err)
                         select {
-                        case errChan <- fmt.Errorf("service %s/%s: %w", svc.Tenant, svc.Name, err):
+                        case errChan <- err:
                         case <-ctx.Done():
                         }
                         continue
@@ -86,24 +95,21 @@ func (e *Enricher) EnrichServices(ctx context.Context, workers int) error {
 
                     if latestFinished != nil {
                         log.Printf("✅ Найден FINISHED релиз: id=%d, clusters=%v", latestFinished.ID, latestFinished.Clusters)
-
                         filter := bson.M{"id": svc.ID}
                         clusters := latestFinished.Clusters
                         if clusters == nil {
                             clusters = []string{}
                         }
                         update := bson.M{"$set": bson.M{"clusters": clusters}}
-
                         result, err := e.collection.UpdateOne(ctx, filter, update)
                         if err != nil {
                             log.Printf("❌ Ошибка обновления %v: %v", svc.ID, err)
                             select {
-                            case errChan <- fmt.Errorf("не удалось обновить %v: %w", svc.ID, err):
+                            case errChan <- err:
                             case <-ctx.Done():
                             }
                             continue
                         }
-
                         if result.MatchedCount == 0 {
                             log.Printf("⚠️  Не найден сервис в MongoDB: id=%v", svc.ID)
                         } else {
@@ -121,7 +127,6 @@ func (e *Enricher) EnrichServices(ctx context.Context, workers int) error {
         go func() {
             defer close(jobChan)
             log.Println("📤 Начало отправки задач в jobChan")
-
             for {
                 select {
                 case err := <-repoErrChan:
@@ -154,22 +159,18 @@ func (e *Enricher) EnrichServices(ctx context.Context, workers int) error {
         go func() {
             wg.Wait()
             log.Println("✅ Все воркеры завершили работу")
-            // ✅ Отправляем nil — означает "всё хорошо"
             select {
             case errChan <- nil:
             case <-ctx.Done():
             }
         }()
 
-        // Ожидаем отмену контекста ИЛИ успешное завершение
-        select {
-        case <-ctx.Done():
-            log.Printf("🛑 Контекст отменён: %v", ctx.Err())
-            errChan <- ctx.Err()
-        }
+        // Ожидаем отмену контекста или успешное завершение
+        <-ctx.Done()
+        log.Printf("🛑 Контекст отменён: %v", ctx.Err())
+        errChan <- ctx.Err()
     }()
 
-    // Блокируем и ждём сигнал от горутины
     log.Println("⏳ Ожидание завершения обогащения...")
     err := <-errChan
     if err != nil && err != context.Canceled {

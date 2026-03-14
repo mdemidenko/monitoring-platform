@@ -4,195 +4,236 @@ import (
     "context"
     "testing"
 
+    "github.com/mdemidenko/monitoring-platform/internal/client"
     "github.com/mdemidenko/monitoring-platform/internal/models"
     "github.com/stretchr/testify/assert"
     "github.com/stretchr/testify/mock"
+    "go.mongodb.org/mongo-driver/bson"
+    "go.mongodb.org/mongo-driver/mongo"
+    "go.mongodb.org/mongo-driver/mongo/options"
 )
 
-// MockRepository — мок для repository.Repository
+// === Моки ===
+
+// MockRepository — мок репозитория
 type MockRepository struct {
     mock.Mock
 }
 
-// GetServices возвращает receive-only канал сервисов и ошибок
 func (m *MockRepository) GetServices(ctx context.Context) (<-chan models.Service, <-chan error) {
     args := m.Called(ctx)
     return args.Get(0).(<-chan models.Service), args.Get(1).(<-chan error)
 }
 
-// SaveResults возвращает канал ошибок
 func (m *MockRepository) SaveResults(ctx context.Context, results <-chan models.Result) <-chan error {
     args := m.Called(ctx, results)
     return args.Get(0).(<-chan error)
 }
 
+// MockPassportClient — мок клиента паспорта
+type MockPassportClient struct {
+    mock.Mock
+}
+
+func (m *MockPassportClient) GetLatestReleases(ctx context.Context, tenant, service string) ([]client.ReleaseInfo, error) {
+    args := m.Called(ctx, tenant, service)
+    return args.Get(0).([]client.ReleaseInfo), args.Error(1)
+}
+
+// MockCollection — мок MongoDB collection
+type MockCollection struct {
+    mock.Mock
+}
+
+func (m *MockCollection) UpdateOne(ctx context.Context, filter, update interface{}, opts ...*options.UpdateOptions) (*mongo.UpdateResult, error) {
+    args := m.Called(ctx, filter, update)
+    return args.Get(0).(*mongo.UpdateResult), args.Error(1)
+}
+
 // === Тесты ===
 
-// TestNew проверяет создание сервиса
-func TestNew(t *testing.T) {
-    repo := &MockRepository{}
-    svc := New(repo)
-    assert.NotNil(t, svc)
-}
-
-// TestService_FilterServicesBatch проверяет фильтрацию
-func TestService_FilterServicesBatch(t *testing.T) {
-    repo := &MockRepository{}
-    svc := &service{repo: repo}
-    ctx := context.Background()
-
-    services := make(chan models.Service, 2)
-    errors := make(chan error, 1)
-
-    services <- models.Service{
-        ID:             1,
-        Name:           "Service 1",
-        Tenant:         "Tenant A",
-        DeprecatedDate: TargetDeprecatedDate,
-        BusinessLine:   TargetBusinessLine,
-    }
-    services <- models.Service{
-        ID:   2,
-        Name: "Service 2",
+func TestEnricher_EnrichServices_Success(t *testing.T) {
+    // Данные
+    services := []models.Service{
+        {
+            ID:       1,
+            Name:     "svc1",
+            Tenant:   "t1",
+            Clusters: nil,
+        },
+        {
+            ID:       2,
+            Name:     "svc2",
+            Tenant:   "t2",
+            Clusters: []string{"existing"},
+        },
     }
 
-    close(services)
-    close(errors)
-
-    // ✅ Явное приведение к receive-only каналам
-    repo.On("GetServices", ctx).Return((<-chan models.Service)(services), (<-chan error)(errors))
-
-    results, procErrs := svc.FilterServicesBatch(ctx, 2)
-
-    var resultCount int
-    for result := range results {
-        assert.Equal(t, 1, result.ID)
-        assert.Equal(t, "Service 1", result.Name)
-        resultCount++
+    releases := []client.ReleaseInfo{
+        {ID: 100, Status: "PENDING"},
+        {ID: 101, Status: "FINISHED", Clusters: []string{"cluster-a", "cluster-b"}},
     }
 
-    assert.Equal(t, 1, resultCount)
+    // Моки
+    repo := new(MockRepository)
+    passport := new(MockPassportClient)
+    collection := new(MockCollection)
 
-    err := <-procErrs
-    assert.Nil(t, err)
+    // Каналы
+    servicesChan := make(chan models.Service, len(services))
+    errChan := make(chan error, 1)
 
-    repo.AssertExpectations(t)
-}
-
-// TestService_FilterServicesBatch_Empty проверяет пустой поток
-func TestService_FilterServicesBatch_Empty(t *testing.T) {
-    repo := &MockRepository{}
-    svc := &service{repo: repo}
-    ctx := context.Background()
-
-    services := make(chan models.Service, 1)
-    errors := make(chan error, 1)
-
-    close(services)
-    close(errors)
-
-    // ✅ Приведение типов
-    repo.On("GetServices", ctx).Return((<-chan models.Service)(services), (<-chan error)(errors))
-
-    results, procErrs := svc.FilterServicesBatch(ctx, 2)
-
-    var resultCount int
-    for range results {
-        resultCount++
+    for _, svc := range services {
+        servicesChan <- svc
     }
-    assert.Equal(t, 0, resultCount)
+    close(servicesChan)
+    close(errChan)
 
-    err := <-procErrs
-    assert.Nil(t, err)
+    // Ожидания
+    repo.On("GetServices", mock.Anything).Return(servicesChan, errChan)
+    passport.On("GetLatestReleases", mock.Anything, "t1", "svc1").Return(releases, nil)
+    collection.On("UpdateOne", mock.Anything, bson.M{"id": int64(1)}, bson.M{"$set": bson.M{"clusters": []string{"cluster-a", "cluster-b"}}}).Return(&mongo.UpdateResult{MatchedCount: 1}, nil)
 
-    repo.AssertExpectations(t)
-}
+    // Создаём enricher
+    enricher := NewEnricher(repo, passport, collection)
 
-// TestService_FilterServicesBatch_WithError проверяет ошибку из репозитория
-func TestService_FilterServicesBatch_WithError(t *testing.T) {
-    repo := &MockRepository{}
-    svc := &service{repo: repo}
-    ctx := context.Background()
-
-    services := make(chan models.Service, 1)
-    errors := make(chan error, 1)
-
-    // Отправляем ошибку
-    errors <- assert.AnError
-    close(services)
-
-    // ✅ Приведение типов
-    repo.On("GetServices", ctx).Return((<-chan models.Service)(services), (<-chan error)(errors))
-
-    results, procErrs := svc.FilterServicesBatch(ctx, 1)
-
-    // Потребляем результаты
-    for range results {
-    }
-
-    err := <-procErrs
-    assert.Error(t, err)
-    assert.Equal(t, assert.AnError, err)
-
-    repo.AssertExpectations(t)
-}
-
-// TestService_FilterServicesBatch_ContextCancel проверяет отмену
-func TestService_FilterServicesBatch_ContextCancel(t *testing.T) {
-    repo := &MockRepository{}
-    svc := &service{repo: repo}
+    // Запускаем
     ctx, cancel := context.WithCancel(context.Background())
+    defer cancel()
 
-    services := make(chan models.Service, 1)
-    errors := make(chan error, 1)
+    err := enricher.EnrichServices(ctx, 2)
 
-    // ✅ Приведение типов
-    repo.On("GetServices", ctx).Return((<-chan models.Service)(services), (<-chan error)(errors))
-
-    results, procErrs := svc.FilterServicesBatch(ctx, 1)
-
-    cancel()
-
-    // Закрываем services, чтобы воркеры завершились
-    close(services)
-
-    // Потребляем результаты
-    var resultCount int
-    for range results {
-        resultCount++
-    }
-    assert.Equal(t, 0, resultCount)
-
-    // Потребляем ошибку
-    err := <-procErrs
-    assert.Nil(t, err)
-
+    // Проверяем
+    assert.NoError(t, err)
     repo.AssertExpectations(t)
+    passport.AssertExpectations(t)
+    collection.AssertExpectations(t)
 }
 
-// TestService_FilterServices проверяет алиас
-func TestService_FilterServices(t *testing.T) {
-    repo := &MockRepository{}
-    svc := &service{repo: repo}
-    ctx := context.Background()
-
-    services := make(chan models.Service, 1)
-    errors := make(chan error, 1)
-
-    close(services)
-    close(errors)
-
-    // ✅ Приведение типов
-    repo.On("GetServices", ctx).Return((<-chan models.Service)(services), (<-chan error)(errors))
-
-    results, procErrs := svc.FilterServices(ctx, 1)
-
-    // Потребляем результаты
-    for range results {
+func TestEnricher_EnrichServices_NoFinishedReleases(t *testing.T) {
+    services := []models.Service{
+        {ID: 1, Name: "svc1", Tenant: "t1"},
     }
 
-    err := <-procErrs
-    assert.Nil(t, err)
+    releases := []client.ReleaseInfo{
+        {ID: 100, Status: "PENDING"},
+        {ID: 101, Status: "FAILED"},
+    }
 
+    repo := new(MockRepository)
+    passport := new(MockPassportClient)
+    collection := new(MockCollection)
+
+    servicesChan := make(chan models.Service, 1)
+    errChan := make(chan error, 1)
+
+    servicesChan <- services[0]
+    close(servicesChan)
+    close(errChan)
+
+    repo.On("GetServices", mock.Anything).Return(servicesChan, errChan)
+    passport.On("GetLatestReleases", mock.Anything, "t1", "svc1").Return(releases, nil)
+    // Не должно быть вызова UpdateOne
+
+    enricher := NewEnricher(repo, passport, collection)
+
+    ctx, cancel := context.WithCancel(context.Background())
+    defer cancel()
+
+    err := enricher.EnrichServices(ctx, 1)
+
+    assert.NoError(t, err)
     repo.AssertExpectations(t)
+    passport.AssertExpectations(t)
+    collection.AssertNotCalled(t, "UpdateOne")
+}
+
+func TestEnricher_EnrichServices_APIError(t *testing.T) {
+    services := []models.Service{
+        {ID: 1, Name: "svc1", Tenant: "t1"},
+    }
+
+    repo := new(MockRepository)
+    passport := new(MockPassportClient)
+    collection := new(MockCollection)
+
+    servicesChan := make(chan models.Service, 1)
+    errChan := make(chan error, 1)
+
+    servicesChan <- services[0]
+    close(servicesChan)
+    close(errChan)
+
+    repo.On("GetServices", mock.Anything).Return(servicesChan, errChan)
+    passport.On("GetLatestReleases", mock.Anything, "t1", "svc1").Return(nil, assert.AnError)
+
+    enricher := NewEnricher(repo, passport, collection)
+
+    ctx, cancel := context.WithCancel(context.Background())
+    defer cancel()
+
+    err := enricher.EnrichServices(ctx, 1)
+
+    assert.NoError(t, err) // Ошибка логируется, но не возвращается
+    repo.AssertExpectations(t)
+    passport.AssertExpectations(t)
+    collection.AssertNotCalled(t, "UpdateOne")
+}
+
+func TestEnricher_EnrichServices_ContextCancelled(t *testing.T) {
+    services := []models.Service{
+        {ID: 1, Name: "svc1", Tenant: "t1"},
+    }
+
+    repo := new(MockRepository)
+    passport := new(MockPassportClient)
+    collection := new(MockCollection)
+
+    servicesChan := make(chan models.Service, 1)
+    errChan := make(chan error, 1)
+
+    servicesChan <- services[0]
+    // Не закрываем — имитируем поток
+
+    repo.On("GetServices", mock.Anything).Return(servicesChan, errChan)
+
+    enricher := NewEnricher(repo, passport, collection)
+
+    ctx, cancel := context.WithCancel(context.Background())
+    cancel() // сразу отменяем
+
+    err := enricher.EnrichServices(ctx, 1)
+
+    assert.ErrorIs(t, err, context.Canceled)
+    repo.AssertExpectations(t)
+    passport.AssertNotCalled(t, "GetLatestReleases")
+    collection.AssertNotCalled(t, "UpdateOne")
+
+    close(servicesChan) // чистим
+}
+
+func TestEnricher_EnrichServices_RepoError(t *testing.T) {
+    repo := new(MockRepository)
+    passport := new(MockPassportClient)
+    collection := new(MockCollection)
+
+    servicesChan := make(chan models.Service, 1)
+    errChan := make(chan error, 1)
+
+    errChan <- assert.AnError
+    close(servicesChan)
+
+    repo.On("GetServices", mock.Anything).Return(servicesChan, errChan)
+
+    enricher := NewEnricher(repo, passport, collection)
+
+    ctx, cancel := context.WithCancel(context.Background())
+    defer cancel()
+
+    err := enricher.EnrichServices(ctx, 1)
+
+    assert.ErrorIs(t, err, assert.AnError)
+    repo.AssertExpectations(t)
+    passport.AssertNotCalled(t, "GetLatestReleases")
+    collection.AssertNotCalled(t, "UpdateOne")
 }

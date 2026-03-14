@@ -47,7 +47,11 @@ func (r *MongoDBRepository) LoadAllServices(ctx context.Context) ([]models.Servi
     if err != nil {
         return nil, err
     }
-    defer cursor.Close(ctx)
+    defer func() {
+    if err := cursor.Close(ctx); err != nil {
+        log.Printf("Failed to close cursor: %v", err)
+    }
+    }()
 
     var services []models.Service
     if err = cursor.All(ctx, &services); err != nil {
@@ -82,7 +86,11 @@ func (r *MongoDBRepository) GetServices(ctx context.Context) (<-chan models.Serv
             errChan <- err
             return
         }
-        defer cursor.Close(ctx)
+        defer func() {
+            if err := cursor.Close(ctx); err != nil {
+                log.Printf("Failed to close MongoDB cursor: %v", err)
+            }
+        }()
 
         for cursor.Next(ctx) {
             var svc models.Service

@@ -58,7 +58,11 @@ func (c *PassportClient) GetLatestReleases(ctx context.Context, tenant, service 
         log.Printf("❌ Ошибка выполнения запроса: %v", err)
         return nil, err
     }
-    defer resp.Body.Close()
+    defer func() {
+    if err := resp.Body.Close(); err != nil {
+        log.Printf("Failed to close response body: %v", err)
+    }
+    }()
 
     // Читаем тело ответа
     body, err := io.ReadAll(resp.Body)
