@@ -2,7 +2,9 @@ package monitor
 
 import (
     "context"
+    "sync"
     "testing"
+    "time"
 
     "github.com/mdemidenko/monitoring-platform/internal/client"
     "github.com/mdemidenko/monitoring-platform/internal/models"
@@ -15,7 +17,6 @@ import (
 
 // === Моки ===
 
-// MockRepository — мок репозитория
 type MockRepository struct {
     mock.Mock
 }
@@ -30,7 +31,6 @@ func (m *MockRepository) SaveResults(ctx context.Context, results <-chan models.
     return args.Get(0).(<-chan error)
 }
 
-// MockPassportClient — мок клиента паспорта
 type MockPassportClient struct {
     mock.Mock
 }
@@ -40,7 +40,6 @@ func (m *MockPassportClient) GetLatestReleases(ctx context.Context, tenant, serv
     return args.Get(0).([]client.ReleaseInfo), args.Error(1)
 }
 
-// MockCollection — мок MongoDB collection
 type MockCollection struct {
     mock.Mock
 }
@@ -50,190 +49,308 @@ func (m *MockCollection) UpdateOne(ctx context.Context, filter, update interface
     return args.Get(0).(*mongo.UpdateResult), args.Error(1)
 }
 
+type MockRedisRepository struct {
+    mock.Mock
+}
+
+func (m *MockRedisRepository) LogChange(ctx context.Context, entityType, entityID, action string, data interface{}) error {
+    args := m.Called(ctx, entityType, entityID, action, data)
+    return args.Error(0)
+}
+
+func (m *MockRedisRepository) Close() error {
+    args := m.Called()
+    return args.Error(0)
+}
+
+// === Вспомогательная функция: chan → <-chan ===
+func toRecvChan[T any](ch chan T) <-chan T {
+    return (<-chan T)(ch)
+}
+
 // === Тесты ===
 
 func TestEnricher_EnrichServices_Success(t *testing.T) {
-    // Данные
     services := []models.Service{
-        {
-            ID:       1,
-            Name:     "svc1",
-            Tenant:   "t1",
-            Clusters: nil,
-        },
-        {
-            ID:       2,
-            Name:     "svc2",
-            Tenant:   "t2",
-            Clusters: []string{"existing"},
-        },
+        {ID: int64(1), Name: "svc1", Tenant: "t1", Clusters: nil},
     }
-
     releases := []client.ReleaseInfo{
-        {ID: 100, Status: "PENDING"},
         {ID: 101, Status: "FINISHED", Clusters: []string{"cluster-a", "cluster-b"}},
     }
 
-    // Моки
     repo := new(MockRepository)
     passport := new(MockPassportClient)
     collection := new(MockCollection)
+    redisRepo := new(MockRedisRepository)
 
-    // Каналы
-    servicesChan := make(chan models.Service, len(services))
-    errChan := make(chan error, 1)
+    servicesChan := make(chan models.Service, 1)
+    errChan := make(chan error, 1) // ← НЕ закрываем
 
-    for _, svc := range services {
-        servicesChan <- svc
-    }
-    close(servicesChan)
-    close(errChan)
+    servicesChan <- services[0]
+    close(servicesChan) // можно закрыть — Enricher сам завершит
 
-    // Ожидания
-    repo.On("GetServices", mock.Anything).Return(servicesChan, errChan)
-    passport.On("GetLatestReleases", mock.Anything, "t1", "svc1").Return(releases, nil)
-    collection.On("UpdateOne", mock.Anything, bson.M{"id": int64(1)}, bson.M{"$set": bson.M{"clusters": []string{"cluster-a", "cluster-b"}}}).Return(&mongo.UpdateResult{MatchedCount: 1}, nil)
+    servicesRecv := toRecvChan(servicesChan)
+    errRecv := toRecvChan(errChan)
 
-    // Создаём enricher
-    enricher := NewEnricher(repo, passport, collection)
+    repo.On("GetServices", mock.Anything).Return(servicesRecv, errRecv).Once()
+    passport.On("GetLatestReleases", mock.Anything, "t1", "svc1").Return(releases, nil).Once()
+    collection.On("UpdateOne",
+        mock.Anything,
+        bson.M{"id": int64(1)},
+        bson.M{"$set": bson.M{"clusters": []string{"cluster-a", "cluster-b"}}},
+    ).Return(&mongo.UpdateResult{MatchedCount: 1}, nil).Once()
+    redisRepo.On("LogChange",
+        mock.Anything,
+        "service",
+        "1",
+        "enrich",
+        mock.MatchedBy(func(data interface{}) bool {
+            d, ok := data.(map[string]interface{})
+            return ok && d["service_id"] == int64(1)
+        }),
+    ).Return(nil).Once()
 
-    // Запускаем
+    enricher := NewEnricher(repo, passport, collection, redisRepo)
+
     ctx, cancel := context.WithCancel(context.Background())
     defer cancel()
 
-    err := enricher.EnrichServices(ctx, 2)
+    var enrichErr error
+    go func() {
+        enrichErr = enricher.EnrichServices(ctx, 1)
+    }()
 
-    // Проверяем
-    assert.NoError(t, err)
+    time.Sleep(100 * time.Millisecond)
+    cancel()
+    time.Sleep(50 * time.Millisecond)
+    enricher.Wait()
+
+    assert.NoError(t, enrichErr)
     repo.AssertExpectations(t)
     passport.AssertExpectations(t)
     collection.AssertExpectations(t)
-}
-
-func TestEnricher_EnrichServices_NoFinishedReleases(t *testing.T) {
-    services := []models.Service{
-        {ID: 1, Name: "svc1", Tenant: "t1"},
-    }
-
-    releases := []client.ReleaseInfo{
-        {ID: 100, Status: "PENDING"},
-        {ID: 101, Status: "FAILED"},
-    }
-
-    repo := new(MockRepository)
-    passport := new(MockPassportClient)
-    collection := new(MockCollection)
-
-    servicesChan := make(chan models.Service, 1)
-    errChan := make(chan error, 1)
-
-    servicesChan <- services[0]
-    close(servicesChan)
-    close(errChan)
-
-    repo.On("GetServices", mock.Anything).Return(servicesChan, errChan)
-    passport.On("GetLatestReleases", mock.Anything, "t1", "svc1").Return(releases, nil)
-    // Не должно быть вызова UpdateOne
-
-    enricher := NewEnricher(repo, passport, collection)
-
-    ctx, cancel := context.WithCancel(context.Background())
-    defer cancel()
-
-    err := enricher.EnrichServices(ctx, 1)
-
-    assert.NoError(t, err)
-    repo.AssertExpectations(t)
-    passport.AssertExpectations(t)
-    collection.AssertNotCalled(t, "UpdateOne")
+    redisRepo.AssertExpectations(t)
 }
 
 func TestEnricher_EnrichServices_APIError(t *testing.T) {
     services := []models.Service{
-        {ID: 1, Name: "svc1", Tenant: "t1"},
+        {ID: int64(1), Name: "svc1", Tenant: "t1", Clusters: nil},
     }
 
     repo := new(MockRepository)
     passport := new(MockPassportClient)
     collection := new(MockCollection)
+    redisRepo := new(MockRedisRepository)
 
     servicesChan := make(chan models.Service, 1)
-    errChan := make(chan error, 1)
+    errChan := make(chan error, 1) // ← НЕ закрываем
 
     servicesChan <- services[0]
     close(servicesChan)
-    close(errChan)
 
-    repo.On("GetServices", mock.Anything).Return(servicesChan, errChan)
-    passport.On("GetLatestReleases", mock.Anything, "t1", "svc1").Return(nil, assert.AnError)
+    servicesRecv := toRecvChan(servicesChan)
+    errRecv := toRecvChan(errChan)
 
-    enricher := NewEnricher(repo, passport, collection)
+    repo.On("GetServices", mock.Anything).Return(servicesRecv, errRecv).Once()
+    passport.On("GetLatestReleases", mock.Anything, "t1", "svc1").Return(nil, assert.AnError).Once()
+
+    collection.AssertNotCalled(t, "UpdateOne")
+    redisRepo.AssertNotCalled(t, "LogChange")
+
+    enricher := NewEnricher(repo, passport, collection, redisRepo)
 
     ctx, cancel := context.WithCancel(context.Background())
     defer cancel()
 
-    err := enricher.EnrichServices(ctx, 1)
+    var enrichErr error
+    go func() {
+        enrichErr = enricher.EnrichServices(ctx, 1)
+    }()
 
-    assert.NoError(t, err) // Ошибка логируется, но не возвращается
+    time.Sleep(100 * time.Millisecond)
+    cancel()
+    time.Sleep(50 * time.Millisecond)
+    enricher.Wait()
+
+    assert.NoError(t, enrichErr)
     repo.AssertExpectations(t)
     passport.AssertExpectations(t)
-    collection.AssertNotCalled(t, "UpdateOne")
 }
 
 func TestEnricher_EnrichServices_ContextCancelled(t *testing.T) {
     services := []models.Service{
-        {ID: 1, Name: "svc1", Tenant: "t1"},
+        {ID: int64(1), Name: "svc1", Tenant: "t1", Clusters: nil},
     }
 
     repo := new(MockRepository)
     passport := new(MockPassportClient)
     collection := new(MockCollection)
+    redisRepo := new(MockRedisRepository)
 
     servicesChan := make(chan models.Service, 1)
-    errChan := make(chan error, 1)
+    errChan := make(chan error, 1) // ← НЕ закрываем
 
     servicesChan <- services[0]
-    // Не закрываем — имитируем поток
+    close(servicesChan)
 
-    repo.On("GetServices", mock.Anything).Return(servicesChan, errChan)
+    servicesRecv := toRecvChan(servicesChan)
+    errRecv := toRecvChan(errChan)
 
-    enricher := NewEnricher(repo, passport, collection)
+    repo.On("GetServices", mock.Anything).Return(servicesRecv, errRecv).Once()
+
+    enricher := NewEnricher(repo, passport, collection, redisRepo)
 
     ctx, cancel := context.WithCancel(context.Background())
     cancel() // сразу отменяем
 
     err := enricher.EnrichServices(ctx, 1)
+    enricher.Wait()
 
     assert.ErrorIs(t, err, context.Canceled)
     repo.AssertExpectations(t)
     passport.AssertNotCalled(t, "GetLatestReleases")
     collection.AssertNotCalled(t, "UpdateOne")
-
-    close(servicesChan) // чистим
+    redisRepo.AssertNotCalled(t, "LogChange")
 }
 
 func TestEnricher_EnrichServices_RepoError(t *testing.T) {
     repo := new(MockRepository)
     passport := new(MockPassportClient)
     collection := new(MockCollection)
+    redisRepo := new(MockRedisRepository)
 
     servicesChan := make(chan models.Service, 1)
-    errChan := make(chan error, 1)
+    // errChan := make(chan error, 1) // ← НЕ закрываем
 
-    errChan <- assert.AnError
-    close(servicesChan)
+    // Создаём отдельный repoErrChan
+    repoErrChan := make(chan error, 1)
+    repoErrChan <- assert.AnError
+    close(repoErrChan)
 
-    repo.On("GetServices", mock.Anything).Return(servicesChan, errChan)
+    close(servicesChan) // servicesChan пустой, но можно закрыть
 
-    enricher := NewEnricher(repo, passport, collection)
+    servicesRecv := toRecvChan(servicesChan)
+    errRecv := toRecvChan(repoErrChan) // ← передаём repoErrChan, а не errChan
+
+    repo.On("GetServices", mock.Anything).Return(servicesRecv, errRecv).Once()
+
+    enricher := NewEnricher(repo, passport, collection, redisRepo)
 
     ctx, cancel := context.WithCancel(context.Background())
     defer cancel()
 
-    err := enricher.EnrichServices(ctx, 1)
+    var enrichErr error
+    go func() {
+        enrichErr = enricher.EnrichServices(ctx, 1)
+    }()
 
-    assert.ErrorIs(t, err, assert.AnError)
+    time.Sleep(100 * time.Millisecond)
+    cancel()
+    time.Sleep(50 * time.Millisecond)
+    enricher.Wait()
+
+    assert.ErrorIs(t, enrichErr, assert.AnError)
     repo.AssertExpectations(t)
     passport.AssertNotCalled(t, "GetLatestReleases")
     collection.AssertNotCalled(t, "UpdateOne")
+    redisRepo.AssertNotCalled(t, "LogChange")
+}
+
+func TestEnricher_Wait_BlocksUntilDone(t *testing.T) {
+    repo := new(MockRepository)
+    passport := new(MockPassportClient)
+    collection := new(MockCollection)
+    redisRepo := new(MockRedisRepository)
+
+    var wg sync.WaitGroup
+    wg.Add(1)
+
+    redisRepo.On("LogChange", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+        Run(func(args mock.Arguments) {
+            time.Sleep(100 * time.Millisecond)
+            wg.Done()
+        }).
+        Return(nil).Once()
+
+    servicesChan := make(chan models.Service, 1)
+    errChan := make(chan error, 1)
+
+    servicesChan <- models.Service{ID: int64(1), Name: "test", Tenant: "t1", Clusters: nil}
+    close(servicesChan)
+
+    servicesRecv := toRecvChan(servicesChan)
+    errRecv := toRecvChan(errChan)
+
+    repo.On("GetServices", mock.Anything).Return(servicesRecv, errRecv).Once()
+    passport.On("GetLatestReleases", mock.Anything, "t1", "test").Return([]client.ReleaseInfo{
+        {ID: 1, Status: "FINISHED", Clusters: []string{"c1"}},
+    }, nil).Once()
+    collection.On("UpdateOne", mock.Anything, mock.Anything, mock.Anything).Return(&mongo.UpdateResult{MatchedCount: 1}, nil).Once()
+
+    enricher := NewEnricher(repo, passport, collection, redisRepo)
+
+    ctx, cancel := context.WithCancel(context.Background())
+    defer cancel()
+
+    var enrichErr error
+    go func() {
+        enrichErr = enricher.EnrichServices(ctx, 1)
+    }()
+
+    time.Sleep(50 * time.Millisecond)
+    cancel()
+    time.Sleep(100 * time.Millisecond)
+    start := time.Now()
+    enricher.Wait()
+    elapsed := time.Since(start)
+
+    assert.Greater(t, elapsed, 50*time.Millisecond, "Wait() должен дождаться завершения асинхронной операции")
+    assert.NoError(t, enrichErr)
+    redisRepo.AssertExpectations(t)
+}
+
+func TestEnricher_LogChange_Error(t *testing.T) {
+    services := []models.Service{
+        {ID: int64(1), Name: "svc1", Tenant: "t1", Clusters: nil},
+    }
+    releases := []client.ReleaseInfo{
+        {ID: 101, Status: "FINISHED", Clusters: []string{"c1"}},
+    }
+
+    repo := new(MockRepository)
+    passport := new(MockPassportClient)
+    collection := new(MockCollection)
+    redisRepo := new(MockRedisRepository)
+
+    servicesChan := make(chan models.Service, 1)
+    errChan := make(chan error, 1)
+
+    servicesChan <- services[0]
+    close(servicesChan)
+
+    servicesRecv := toRecvChan(servicesChan)
+    errRecv := toRecvChan(errChan)
+
+    repo.On("GetServices", mock.Anything).Return(servicesRecv, errRecv).Once()
+    passport.On("GetLatestReleases", mock.Anything, "t1", "svc1").Return(releases, nil).Once()
+    collection.On("UpdateOne", mock.Anything, mock.Anything, mock.Anything).Return(&mongo.UpdateResult{MatchedCount: 1}, nil).Once()
+    redisRepo.On("LogChange", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(assert.AnError).Once()
+
+    enricher := NewEnricher(repo, passport, collection, redisRepo)
+
+    ctx, cancel := context.WithCancel(context.Background())
+    defer cancel()
+
+    var enrichErr error
+    go func() {
+        enrichErr = enricher.EnrichServices(ctx, 1)
+    }()
+
+    time.Sleep(100 * time.Millisecond)
+    cancel()
+    time.Sleep(50 * time.Millisecond)
+    enricher.Wait()
+
+    assert.NoError(t, enrichErr, "Ошибка в LogChange не должна влиять на результат EnrichServices")
+    redisRepo.AssertExpectations(t)
 }

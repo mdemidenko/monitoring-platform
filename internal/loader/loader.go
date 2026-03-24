@@ -57,7 +57,7 @@ func getExistingIDs(ctx context.Context, collection *mongo.Collection) (map[inte
     }
 
     existing[normalizedID] = true
-    log.Printf("📥 Найден в БД: id=%v → нормализовано: %v", result.ID, normalizedID)
+    // log.Printf("📥 Найден в БД: id=%v → нормализовано: %v", result.ID, normalizedID)
     count++
 	}
 
@@ -122,7 +122,7 @@ func LoadAndFilterServices(ctx context.Context, collection *mongo.Collection, fi
 
     // 🔍 Проверяем: есть ли уже в БД
     if _, exists := existing[normalizedID]; exists {
-        log.Printf("🔁 Уже в БД: id=%v, пропускаем", idRaw)
+        // log.Printf("🔁 Уже в БД: id=%v, пропускаем", idRaw)
         continue
     }
 

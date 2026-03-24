@@ -2,7 +2,7 @@ services:
   # Redis с фиксированной версией
   redis:
     image: redis:8.4
-    container_name: redis-practice
+    container_name: redis-monitoring
     ports:
       - "6379:6379"
     volumes:
@@ -31,13 +31,13 @@ services:
   # MongoDB с фиксированной версией
   mongodb:
     image: mongo:8.2.4
-    container_name: mongodb-practice
+    container_name: mongodb-monitoring
     ports:
       - "27017:27017"
     environment:
       MONGO_INITDB_ROOT_USERNAME: admin
       MONGO_INITDB_ROOT_PASSWORD: password
-      MONGO_INITDB_DATABASE: practice
+      MONGO_INITDB_DATABASE: monitoring
     volumes:
       - mongodb_data:/data/db
       - ./init-mongo.js:/docker-entrypoint-initdb.d/init-mongo.js:ro

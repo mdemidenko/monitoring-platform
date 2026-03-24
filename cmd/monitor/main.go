@@ -48,6 +48,23 @@ func main() {
         log.Println("Принудительный выход!")
         os.Exit(1)
     }()
+    // === ШАГ 0: Подключаем Redis ===
+    log.Println("🔌 Подключаемся к Redis...")
+    redisRepo, err := repository.NewRedisRepository(
+        appConfig.Redis.Addr,
+        appConfig.Redis.Password,
+        appConfig.Redis.DB,
+        appConfig.Redis.TTL,
+    )
+    if err != nil {
+        log.Fatalf("❌ Не удалось подключиться к Redis: %v", err)
+    }
+    defer func() {
+        if err := redisRepo.Close(); err != nil {
+            log.Printf("⚠️ Ошибка при закрытии Redis: %v", err)
+        }
+    }()
+    log.Printf("✅ Redis подключён: %s, TTL=%ds", appConfig.Redis.Addr, appConfig.Redis.TTL)
 
     // === ШАГ 1: Подключаемся к MongoDB ===
     mongoRepo, err := repository.NewMongoDBRepository(cfg.MongoDBURI, cfg.DBName, cfg.CollectionName)
@@ -70,14 +87,21 @@ func main() {
     // Создаём HTTP-клиент для внешней системы
     passportClient := client.NewPassportClient("https://smesre.tcsgroup.io/passport/v2")
 
-    // Создаём сервис для обогащения
-    enricher := monitor.NewEnricher(mongoRepo, passportClient, collection)
+    // Создаём сервис для обогащения    
+    enricher := monitor.NewEnricher(mongoRepo, passportClient, mongoRepo.GetCollection(), redisRepo)
 
     // Запускаем обогащение
     if err := enricher.EnrichServices(ctx, cfg.Workers); err != nil && err != context.Canceled {
-        log.Printf("Ошибка обогащения: %v", err)
-        os.Exit(1)
+    log.Printf("Ошибка обогащения: %v", err)
+    os.Exit(1)
     }
+
+    log.Println("✅ Приложение успешно завершено")
+
+    // === Дожидаемся завершения всех асинхронных записей в Redis ===
+    log.Println("⏳ Дожидаемся завершения операций Redis...")
+    enricher.Wait()
+    log.Println("✅ Все операции Redis завершены")
 
     log.Println("✅ Приложение успешно завершено")
 }

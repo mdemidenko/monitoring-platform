@@ -4,6 +4,8 @@ import (
     "context"
     "log"
     "sync"
+    "fmt"
+    "time"
 
     "github.com/mdemidenko/monitoring-platform/internal/client"
     "github.com/mdemidenko/monitoring-platform/internal/models"
@@ -27,15 +29,24 @@ type Enricher struct {
     repo       repository.Repository
     passport   PassportClient
     collection MongoCollection
+    redisRepo  repository.RedisRepositoryInterface
+    wg         sync.WaitGroup
 }
 
 // NewEnricher создаёт новый обогатитель
-func NewEnricher(repo repository.Repository, passport PassportClient, collection MongoCollection) *Enricher {
-    return &Enricher{
-        repo:       repo,
-        passport:   passport,
-        collection: collection,
-    }
+func NewEnricher(
+    repo repository.Repository,
+    passport PassportClient,
+    collection MongoCollection,
+    redisRepo repository.RedisRepositoryInterface,
+    ) *Enricher {
+        return &Enricher{
+            repo:       repo,
+            passport:   passport,
+            collection: collection,
+            redisRepo:  redisRepo,
+            wg:         sync.WaitGroup{},
+        }
 }
 
 // EnrichServices обогащает сервисы кластерами из последнего FINISHED релиза
@@ -55,13 +66,9 @@ func (e *Enricher) EnrichServices(ctx context.Context, workers int) error {
             wg.Add(1)
             go func(workerID int) {
                 defer wg.Done()
-                log.Printf("👷 Воркер %d запущен", workerID)
                 for svc := range jobChan {
-                    log.Printf("📥 Воркер %d получил сервис: id=%v, name=%s", workerID, svc.ID, svc.Name)
-
                     // 🔍 Пропускаем, если уже есть clusters
                     if len(svc.Clusters) > 0 {
-                        log.Printf("⏭️  Уже обогащён: %s/%s → clusters=%v", svc.Tenant, svc.Name, svc.Clusters)
                         continue
                     }
 
@@ -72,7 +79,6 @@ func (e *Enricher) EnrichServices(ctx context.Context, workers int) error {
                     default:
                     }
 
-                    log.Printf("➡️  Запрос к API: tenant=%s, service=%s", svc.Tenant, svc.Name)
                     releases, err := e.passport.GetLatestReleases(ctx, svc.Tenant, svc.Name)
                     if err != nil {
                         log.Printf("❌ Ошибка API для %s/%s: %v", svc.Tenant, svc.Name, err)
@@ -110,10 +116,34 @@ func (e *Enricher) EnrichServices(ctx context.Context, workers int) error {
                             }
                             continue
                         }
+
                         if result.MatchedCount == 0 {
                             log.Printf("⚠️  Не найден сервис в MongoDB: id=%v", svc.ID)
                         } else {
                             log.Printf("💾 Обновлено: %s/%s → clusters=%v", svc.Tenant, svc.Name, clusters)
+
+                            // ✅ REDIS: Логируем изменение
+                            e.wg.Add(1)
+                            go func() {
+                                defer e.wg.Done()
+                                logData := map[string]interface{}{
+                                    "action":        "enrich",
+                                    "service_id":    svc.ID,
+                                    "service_name":  svc.Name,
+                                    "tenant":        svc.Tenant,
+                                    "new_clusters":  clusters,
+                                    "release_id":    latestFinished.ID,
+                                    "updated_at":    time.Now().UTC().Format(time.RFC3339),
+                                    "worker_id":     workerID,
+                                }
+
+                                // Используем fmt.Sprintf("%v") на случай, если ID — ObjectID
+                                entityID := fmt.Sprintf("%v", svc.ID)
+                                if err := e.redisRepo.LogChange(ctx, "service", entityID, "enrich", logData); err != nil {
+                                    log.Printf("⚠️ REDIS: Не удалось записать событие: %v", err)
+                                    // Не паникуем — Redis не критичен
+                                }
+                            }()
                         }
                     } else {
                         log.Printf("🟡 Нет завершённых релизов для %s/%s", svc.Tenant, svc.Name)
@@ -143,13 +173,10 @@ func (e *Enricher) EnrichServices(ctx context.Context, workers int) error {
                         log.Println("🔚 servicesChan закрыт, завершаем отправку")
                         return
                     }
-                    log.Printf("📤 Отправляем сервис в jobChan: id=%v, name=%s", svc.ID, svc.Name)
                     select {
                     case <-ctx.Done():
-                        log.Println("🛑 Контекст отменён, прекращаем отправку")
                         return
                     case jobChan <- svc:
-                        log.Printf("✅ Сервис id=%v отправлен в jobChan", svc.ID)
                     }
                 }
             }
@@ -179,4 +206,8 @@ func (e *Enricher) EnrichServices(ctx context.Context, workers int) error {
     }
     log.Println("✅ EnrichServices завершён успешно")
     return nil
+}
+
+func (e *Enricher) Wait() {
+    e.wg.Wait()
 }

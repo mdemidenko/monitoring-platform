@@ -40,6 +40,13 @@ type FileConfig struct {
     CollectionName  string        `yaml:"collection_name"`
 }
 
+type RedisConfig struct {
+    Addr     string `yaml:"addr" json:"addr"`
+    Password string `yaml:"password" json:"password"`
+    DB       int    `yaml:"db" json:"db"`
+    TTL      int    `yaml:"ttl" json:"ttl"` // в секундах
+}
+
 func FileLoadConfig() FileConfig {
     // Добавляем флаги командной строки
     var workers int
@@ -85,6 +92,7 @@ type Config struct {
 	Server   ServerConfig   `yaml:"server" json:"server"`
 	Auth     AuthConfig     `yaml:"auth" json:"auth"`
 	File     FileConfig     `yaml:"file" json:"file"`
+	Redis    RedisConfig    `yaml:"redis" json:"redis"`
 }
 
 // LoadConfig загружает конфигурацию из YAML файла
